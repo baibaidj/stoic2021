@@ -59,5 +59,3 @@ from .utils import (
     worker_init_fn,
     zoom_affine,
 )
-
-from .dataloader_ import MultiEpochsDataLoader

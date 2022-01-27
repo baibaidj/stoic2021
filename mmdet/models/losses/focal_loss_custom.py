@@ -30,8 +30,10 @@ def focal_loss_with_prob_multitask(pred,
         avg_factor (int, optional): Average factor that is used to average
             the loss. Defaults to None.
     """
-    assert target.shape == pred.shape[:2]
+    # assert target.shape == pred.shape[:2]
 
+    # print_tensor('[FocalLoss] pred', pred)
+    # print_tensor('[FocalLoss] gt', target)
     target = target.type_as(pred)
     pt = (1 - pred) * target + pred * (1 - target)
     focal_weight = (alpha * target + (1 - alpha) * (1 - target)) * pt.pow(gamma)
@@ -53,7 +55,7 @@ def focal_loss_with_prob_multitask(pred,
         assert weight.ndim == loss.ndim
     
     if class_weight is not None:
-        for i in enumerate(class_weight):
+        for i, w in enumerate(class_weight):
             loss[:, i] = loss[:, i] * class_weight[i]
 
     loss = weight_reduce_loss(loss, weight, reduction, avg_factor)
@@ -71,7 +73,7 @@ class FocalLossMultitask(nn.Module):
                  reduction='mean',
                  class_weight = None, 
                  loss_weight=1.0, 
-                 activated=False, 
+                 perform_act=True, 
                  verbose = False):
         """`Focal Loss <https://arxiv.org/abs/1708.02002>`_
 
@@ -98,7 +100,7 @@ class FocalLossMultitask(nn.Module):
         self.alpha = alpha
         self.reduction = reduction
         self.loss_weight = loss_weight
-        self.activated = activated
+        self.perform_act = perform_act
         self.class_weight = class_weight
         self.verbose = verbose
 
@@ -129,6 +131,9 @@ class FocalLossMultitask(nn.Module):
         reduction = (
             reduction_override if reduction_override else self.reduction)
         if self.use_sigmoid:
+            
+            if self.perform_act:
+                pred = pred.sigmoid()
 
             calculate_loss_func = focal_loss_with_prob_multitask
             loss_cls = self.loss_weight * calculate_loss_func(

@@ -6,9 +6,11 @@ from ..builder import HEADS
 from .cls_head import ClsHead, Accuracy
 from .neck_gap import GlobalAveragePooling
 from mmcv.utils.parrots_wrapper import _BatchNorm
+
 from ..utils.implicit_semantic_data_aug import ISDALossCls
 import pdb
 
+print_tensor = lambda n, x: print(n, type(x), x.dtype, x.shape, x.min(), x.max())
 
 @HEADS.register_module()
 class LinearClsHead(ClsHead):
@@ -32,6 +34,7 @@ class LinearClsHead(ClsHead):
                  isda_lambda = 2.5,
                  start_iters = 1,
                  max_iters = 4e5,
+                 verb = False
                  ):
         super(LinearClsHead, self).__init__(loss=loss, topk=topk)
         self.in_channels = in_channels
@@ -49,6 +52,8 @@ class LinearClsHead(ClsHead):
             self.cls_out_channels = num_classes
         else:
             self.cls_out_channels = num_classes + 1
+        
+        self.verb = verb
 
         if self.num_classes <= 0:
             raise ValueError(
@@ -74,18 +79,21 @@ class LinearClsHead(ClsHead):
     def init_weights(self):
         normal_init(self.fc, mean=0, std=0.01, bias=0)
 
-    def forward_train(self, x, gt_label, train_cfg):
-        gt_vector = gt_label.view(gt_label.shape[0], -1).max(-1).values
+    def forward_train(self, x, gt_label, train_cfg = None):
+        # gt_vector = gt_label.view(gt_label.shape[0], -1).max(-1).values
+        gt_vector = gt_label
         ip = x[self.in_index] if isinstance(x, (tuple, list)) else x
-        ip_dtype = ip.dtype
-        if self.dropout is not None: ip = self.dropout(ip) 
 
+        if self.verb: print_tensor(f'[ClsHead] gtcls {gt_label}; input ', ip)
+
+        if self.dropout is not None: ip = self.dropout(ip) 
+        ip_dtype = ip.dtype
         with torch.cuda.amp.autocast(enabled = False):
             gap_out = self.gap(ip.float())
-        # print_tensor('[ClsHead] input', ip)
-        # print_tensor('[ClsHead] post gap', x)
+
+        if self.verb: print_tensor('[ClsHead] post gap', gap_out)
         cls_score = self.fc(gap_out)
-        # print_tensor('[ClsHead] score', cls_score)
+        if self.verb: print_tensor('[ClsHead] score', cls_score)
 
         if self.is_use_isda:
             ratio = min(self.isda_lambda * self._iter, self._max_iters) / self._max_iters

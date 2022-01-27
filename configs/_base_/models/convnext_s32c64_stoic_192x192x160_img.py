@@ -7,7 +7,7 @@ conv_cfg = dict(type = 'Conv3d')
 norm4head = dict(type='GN', num_groups=16, requires_grad=True) 
 norm_cfg = dict(type='IN3d', requires_grad=True) 
 model = dict(
-    type='ImageClassifier',
+    type='ImageClassifierMed',
     backbone=dict(
         type='ConvNeXt3D',
         in_channels=1, 
@@ -24,12 +24,12 @@ model = dict(
         conv_cfg=conv_cfg,
         norm_cfg=norm_cfg,  # TODO: replace ReLU with Swish
         ),
-    neck= dict(type = 'GlobalAveragePooling', dim = 3) ,
+    # neck= dict(type = 'GlobalAveragePooling', dim = 3) , 
     head=dict(type='LinearClsHead',
             in_channels = 320,
             num_classes = 2,
-            use_sigmoid = True, 
             loss=dict(type='FocalLossMultitask', 
+                        use_sigmoid = True, 
                         loss_weight=2.0, 
                         class_weight = (1.0, 1.0)),
             in_index = -1, 

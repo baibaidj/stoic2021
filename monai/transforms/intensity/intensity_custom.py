@@ -61,7 +61,6 @@ class NormalizeIntensityGPU(Transform):
         img = self._normalize(img, self.subtrahend, self.divisor, self.percentile_99_5, self.percentile_00_5)
         return img
 
-from monai.transforms.intensity.array import NormalizeIntensityGPU
 class NormalizeIntensityGPUd(MapTransform):
     """
     Dictionary-based wrapper of :py:class:`monai.transforms.NNUNetNormalizeIntensity`.

@@ -10,6 +10,7 @@ import torch.nn as nn
 from mmcv import color_val
 from mmcv.utils import print_log
 from mmcv.runner import auto_fp16, BaseModule
+from mmdet.utils.resize import list_dict2dict_list
 
 class BaseClassifier(BaseModule):
     """Base class for classifiers"""
@@ -49,9 +50,6 @@ class BaseClassifier(BaseModule):
     def simple_test(self, img, **kwargs):
         pass
 
-    def init_weights(self, pretrained=None):
-        if pretrained is not None:
-            print_log(f'load model from: {pretrained}', logger='root')
 
     def forward_test(self, imgs, **kwargs):
         """
@@ -139,7 +137,8 @@ class BaseClassifier(BaseModule):
                 DDP, it means the batch size on each GPU), which is used for
                 averaging the logs.
         """
-        losses = self(**data)
+        if isinstance(data, (list, tuple)): data = list_dict2dict_list(data)
+        losses = self(**data) 
         loss, log_vars = self._parse_losses(losses)
 
         outputs = dict(

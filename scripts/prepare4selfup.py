@@ -1,9 +1,9 @@
 
-import sys
-mmseg_rt = '~/git/mmseg4med'
-monai_rt = '~/git/MONAI'
-if mmseg_rt in sys.path: sys.path.remove(mmseg_rt)
-if monai_rt in sys.path: sys.path.remove(monai_rt)
+import os, sys
+user_home = os.environ['HOME']
+conflict_rts = [f'{user_home}/git/mmseg4med', f'{user_home}/git/MONAI', f'{user_home}/git/mmdet4med']
+for rt in conflict_rts:
+    if rt in sys.path: sys.path.remove(rt)
 
 import torch
 import torch.nn.functional as F

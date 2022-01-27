@@ -1,19 +1,19 @@
 import torch.nn as nn
 
-from ..builder import MODELS, build_backbone, build_head, build_neck
+from ..builder import DETECTORS, build_backbone, build_head, build_neck
 from ..utils.mixup import BatchMixupLayer
 from .base import BaseClassifier
 
 
-@MODELS.register_module()
+@DETECTORS.register_module()
 class ImageClassifier(BaseClassifier):
 
     def __init__(self,
                  backbone,
                  neck=None,
                  head=None,
-                 pretrained=None,
                  train_cfg=None, 
+                 test_cfg = None, 
                  init_cfg = None):
         super(ImageClassifier, self).__init__(init_cfg)
 
@@ -30,6 +30,8 @@ class ImageClassifier(BaseClassifier):
             mixup_cfg = train_cfg.get('mixup', None)
             self.mixup = BatchMixupLayer(**mixup_cfg)
 
+        self.train_cfg = train_cfg
+        self.test_cfg = test_cfg
     #     self.init_weights(pretrained=pretrained)
 
     # def init_weights(self, pretrained=None):

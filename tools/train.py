@@ -3,15 +3,16 @@ import argparse
 import copy
 import os, sys
 import os.path as osp
-import time
+import time, ipdb
 import warnings
-mmseg_rt = '~/git/mmseg4med'
-monai_rt = '~/git/MONAI'
-if mmseg_rt in sys.path: sys.path.remove(mmseg_rt)
-if monai_rt in sys.path: sys.path.remove(monai_rt)
+user_home = os.environ['HOME']
+conflict_rts = [f'{user_home}/git/mmseg4med', f'{user_home}/git/MONAI', f'{user_home}/git/mmdet4med']
+for rt in conflict_rts:
+    if rt in sys.path: sys.path.remove(rt)
+
 
 import mmcv
-import torch, pdb
+import torch
 from mmcv import Config, DictAction
 from mmcv.runner import get_dist_info, init_dist
 from mmcv.utils import get_git_hash

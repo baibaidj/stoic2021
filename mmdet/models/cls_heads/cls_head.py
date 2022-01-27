@@ -4,7 +4,8 @@ import torch.nn.functional as F
 from mmdet.models.losses import Accuracy
 from ..builder import HEADS, build_loss
 from .base_head import BaseHead
-
+from mmcv.runner import force_fp32
+import ipdb
 
 @HEADS.register_module()
 class ClsHead(BaseHead):
@@ -31,14 +32,17 @@ class ClsHead(BaseHead):
         self.compute_loss = build_loss(loss)
         self.compute_accuracy = Accuracy(topk=self.topk)
 
+    @force_fp32(apply_to=('cls_score', ))
     def loss(self, cls_score, gt_label):
         num_samples = len(cls_score)
         losses = dict()
         # compute loss
-        loss = self.compute_loss(cls_score, gt_label, avg_factor=num_samples)
+        with torch.cuda.amp.autocast(enabled = False):
+            loss = self.compute_loss(cls_score, gt_label, avg_factor=num_samples)
         # compute accuracy
-        acc = self.compute_accuracy(cls_score, gt_label)
-        assert len(acc) == len(self.topk)
+        with torch.no_grad():
+            acc = self.compute_accuracy(cls_score, gt_label)
+        # assert len(acc) == len(self.topk)
         losses['loss'] = loss
         for k, a in enumerate(acc): losses[f'acc_cls{k}'] = a
         # losses['accuracy'] = {f'top-{k}': a for k, a in zip(self.topk, acc)}

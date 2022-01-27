@@ -114,6 +114,6 @@ def accuracy_multi_task(pred : torch.Tensor, target, thresh=0.5):
 
     pred_label = pred.sigmoid() > thresh
 
-    correct = pred_label.eq(target)
+    correct = pred_label.eq(target).float()
     correct_by_class = correct.mean(dim = 0) * 100.0
     return correct_by_class

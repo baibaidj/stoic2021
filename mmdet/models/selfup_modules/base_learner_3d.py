@@ -7,7 +7,7 @@ import torch, pdb
 import torch.distributed as dist
 from mmcv.runner import BaseModule, auto_fp16
 
-from mmdet.core.visualization import imshow_det_bboxes
+# from mmdet.core.visualization import imshow_det_bboxes
 from mmdet.utils.resize import list_dict2dict_list
 
 

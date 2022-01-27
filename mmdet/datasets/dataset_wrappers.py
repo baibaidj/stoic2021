@@ -10,7 +10,7 @@ from mmcv.utils import build_from_cfg, print_log
 from torch.utils.data.dataset import ConcatDataset as _ConcatDataset
 
 from .builder import DATASETS, PIPELINES
-from .coco import CocoDataset
+# from .coco import CocoDataset
 
 
 @DATASETS.register_module()

@@ -1,37 +1,24 @@
 import torch
-from ..builder import MODELS, build_backbone, build_head, build_neck
+
+from mmdet.apis import train
+from ..builder import DETECTORS, build_backbone, build_head, build_neck
 # from ..utils import BatchMixupLayer
-from .base import BaseClassifier
+from .image import ImageClassifier
 from mmdet.datasets.pipelines.compose import Compose
 from mmdet.utils.resize import list_dict2dict_list
 from ..utils import print_tensor
 
 
-@MODELS.register_module()
-class ImageClassifierMed(BaseClassifier):
+@DETECTORS.register_module()
+class ImageClassifierMed(ImageClassifier):
 
-    def __init__(self,
-                 backbone,
-                 neck=None,
-                 head=None,
-                 train_cfg=None, 
+    def __init__(self, *args, 
                  gpu_aug_pipelines = None, 
-                 init_cfg = None,
+                 **kwargs
                  ):
-        super(ImageClassifierMed, self).__init__(init_cfg)
+        super(ImageClassifierMed, self).__init__(*args, **kwargs)
 
-        self.backbone = build_backbone(backbone)
         self.gpu_pipelines = Compose(gpu_aug_pipelines) if gpu_aug_pipelines is not None else None
-        if neck is not None:
-            self.neck = build_neck(neck)
-
-        if head is not None:
-            self.head = build_head(head)
-
-        self.mixup = None
-        if train_cfg is not None:
-            mixup_cfg = train_cfg.get('mixup', None)
-            # self.mixup = BatchMixupLayer(**mixup_cfg)
 
     @torch.no_grad()
     def update_img_metas(self, imgs, img_metas, **kwargs):
@@ -78,7 +65,7 @@ class ImageClassifierMed(BaseClassifier):
         img, gt_label = self.update_img_metas(img, img_metas)
         x = self.extract_feat(img)
         losses = dict()
-        loss, gap_feat1d = self.head.forward_train(x, gt_label)
+        loss, gap_feat1d = self.head.forward_train(x, gt_label, self.train_cfg)
         losses.update(loss)
 
         return losses

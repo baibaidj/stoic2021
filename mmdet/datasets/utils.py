@@ -7,8 +7,8 @@ from mmcv.runner.hooks import HOOKS, Hook
 
 from mmdet.datasets.builder import PIPELINES
 from mmdet.datasets.pipelines import LoadAnnotations, LoadImageFromFile
-from mmdet.models.dense_heads import GARPNHead, RPNHead
-from mmdet.models.roi_heads.mask_heads import FusedSemanticHead
+# from mmdet.models.dense_heads import GARPNHead, RPNHead
+# from mmdet.models.roi_heads.mask_heads import FusedSemanticHead
 
 
 def replace_ImageToTensor(pipelines):

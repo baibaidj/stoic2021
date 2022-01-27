@@ -9,8 +9,8 @@ import mmcv
 import numpy as np
 from numpy import random
 
-from mmdet.core import PolygonMasks, find_inside_bboxes
-from mmdet.core.evaluation.bbox_overlaps import bbox_overlaps
+# from mmdet.core import PolygonMasks, find_inside_bboxes
+# from mmdet.core.evaluation.bbox_overlaps import bbox_overlaps
 from ..builder import PIPELINES
 
 try:

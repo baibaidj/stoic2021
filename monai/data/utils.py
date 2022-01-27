@@ -38,7 +38,7 @@ from monai.utils import (
 )
 from monai.utils.enums import Method
 from monai.utils.misc import issequenceiterable
-from monai.utils.utils_ import print_tensor
+print_tensor = lambda n, x: print(n, type(x), x.dtype, x.shape, x.min(), x.max())
 
 nib, _ = optional_import("nibabel")
 

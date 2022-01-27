@@ -8,7 +8,6 @@ from torch.nn.modules.utils import _ntuple
 
 from ..builder import BACKBONES
 from ..utils import  ResLayerIso
-from .resnet import BasicBlock, Bottleneck
 from .resnet3d import BasicBlock3d, Bottleneck3d
 from ...utils import get_root_logger
 import torch
@@ -262,12 +261,6 @@ class ResNet3dIso(BaseModule):
     """
 
     arch_settings = {
-        18: (BasicBlock, (2, 2, 2, 2, 2)), 
-        34: (BasicBlock, (3, 4, 6, 3, 2)),
-        50: (Bottleneck, (3, 4, 6, 3, 2)),
-        101: (Bottleneck, (3, 4, 23, 3)),
-        152: (Bottleneck, (3, 8, 36, 3)),
-        '34bneck': (Bottleneck, (2, 2, 2, 2)), 
         '18basicp3d': (BasicBlockP3D, (2, 2, 2, 2)), 
         '34basicp3d': (BasicBlockP3D, (3, 4, 6, 3)), 
         '34bneckp3d': (BottleneckP3D, (2, 2, 2, 2)),

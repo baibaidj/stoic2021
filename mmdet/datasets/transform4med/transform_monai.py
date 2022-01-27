@@ -48,7 +48,7 @@ SaveImaged = preg(SaveImaged)
 class AddInfo2Meta():
 
     AGE_MAP = {35: 0, 45: 1, 55: 2, 65: 3, 75: 4, 85: 5}
-    SEX_MAP = {'F': 0, 'M': 1, 'A': 2, 'O': 2}
+    SEX_MAP = {'F': 0, 'M': 1, 'A': 2, 'O': 2, 'N': 2}
 
     def __init__(self, key = 'img_meta_dict', sub_key = 'filename_or_obj') -> None:
         self.key = key
@@ -58,7 +58,10 @@ class AddInfo2Meta():
     def __call__(self, data):
         d = dict(data)
         img_fp = d[self.key][self.sub_key]
+        # try:
         target_cls, age_num, sex_num, pid = self.stoic_class_from_fname(img_fp)
+        # except KeyError:
+        #     print('[LoadError] caseid', img_fp)
         d[self.key]['target_class'] = target_cls
         d[self.key]['age'] = age_num
         d[self.key]['sex'] = sex_num
@@ -72,7 +75,7 @@ class AddInfo2Meta():
         covid = int(covid[5:])
         severe = int(severe[6:])
         age_num = self.AGE_MAP[int(age[1:-1]) if len(age) > 2 else int(age)]
-        sex_num = self.SEX_MAP[sex]
+        sex_num = self.SEX_MAP.get(sex, 2)
         target_cls = [covid, severe]
         return target_cls, age_num, sex_num, pid
 

@@ -1,3 +1,6 @@
+# If you find this repo helpful, please kindly give it a star (right upper of this page). 
+# Many thanks to OpenMMLab and MONAI group. 
+
 # STOIC2021 Baseline Algorithm
 
 This codebase contains an example submission for the [STOIC2021 COVID-19 AI Challenge](https://stoic2021.grand-challenge.org/). As a baseline algorithm, it implements a simple evaluation pipeline for an [I3D model](https://github.com/hassony2/kinetics_i3d_pytorch) that was trained on the [STOIC2021 training data](https://registry.opendata.aws/stoic2021-training/). You can use this repo as a template for your submission to the Qualification phase of the STOIC2021 challenge.
