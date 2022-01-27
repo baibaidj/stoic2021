@@ -1,0 +1,131 @@
+import torch
+from ..builder import MODELS, build_backbone, build_head, build_neck
+# from ..utils import BatchMixupLayer
+from .base import BaseClassifier
+from mmdet.datasets.pipelines.compose import Compose
+from mmdet.utils.resize import list_dict2dict_list
+from ..utils import print_tensor
+
+
+@MODELS.register_module()
+class ImageClassifierMed(BaseClassifier):
+
+    def __init__(self,
+                 backbone,
+                 neck=None,
+                 head=None,
+                 train_cfg=None, 
+                 gpu_aug_pipelines = None, 
+                 init_cfg = None,
+                 ):
+        super(ImageClassifierMed, self).__init__(init_cfg)
+
+        self.backbone = build_backbone(backbone)
+        self.gpu_pipelines = Compose(gpu_aug_pipelines) if gpu_aug_pipelines is not None else None
+        if neck is not None:
+            self.neck = build_neck(neck)
+
+        if head is not None:
+            self.head = build_head(head)
+
+        self.mixup = None
+        if train_cfg is not None:
+            mixup_cfg = train_cfg.get('mixup', None)
+            # self.mixup = BatchMixupLayer(**mixup_cfg)
+
+    @torch.no_grad()
+    def update_img_metas(self, imgs, img_metas, **kwargs):
+        # NOTE the batched image size information may be useful, e.g.
+        # in DETR, this is needed for the construction of masks, which is
+        # then used for the transformer_head.
+        # TODO: adjust keys
+        # gt_keys = ['img'] # 'img_metas'
+        data_dict = list_dict2dict_list(img_metas, verbose=False)
+        data_dict.update({'img': imgs}) # , 'seg': seg
+        data_dict = self.gpu_pipelines(data_dict)
+        # for b, m in enumerate(img_metas): m['patch_shape'] = data_dict['patch_shape']
+
+        cls_gt_list = [m['img_meta_dict']['target_class'] for m in img_metas]
+        gt_label = torch.tensor(cls_gt_list, dtype = torch.long, device=imgs.device) 
+        return data_dict['img'], gt_label
+
+
+    def extract_feat(self, img):
+        """Directly extract features from the backbone + neck
+        """
+        x = self.backbone(img)
+        if self.with_neck:
+            x = self.neck(x)
+        return x
+
+    def forward_train(self, img, img_metas, **kwargs):
+        """Forward computation during training.
+
+        Args:
+            img (Tensor): of shape (N, C, H, W) encoding input images.
+                Typically these should be mean centered and std scaled.
+
+            gt_label (Tensor): It should be of shape (N, 1) encoding the
+                ground-truth label of input images for single label task. It
+                shoulf be of shape (N, C) encoding the ground-truth label
+                of input images for multi-labels task.
+
+        Returns:
+            dict[str, Tensor]: a dictionary of loss components
+        """
+
+        # print_tensor('rawgt', gt_semantic_seg) # {key: [meta1, meta],}
+        img, gt_label = self.update_img_metas(img, img_metas)
+        x = self.extract_feat(img)
+        losses = dict()
+        loss, gap_feat1d = self.head.forward_train(x, gt_label)
+        losses.update(loss)
+
+        return losses
+
+    def simple_test(self, img, img_metas):
+        """Test without augmentation."""
+        x = self.extract_feat(img)
+        out_cls, gap_feat1d = self.head.simple_test(x)
+        return out_cls
+
+
+    def forward_train_cl(self, img, img_metas, **kwargs):
+        """Forward computation during training.
+
+        Args:
+            img (Tensor): of shape (N, C, H, W) encoding input images.
+                Typically these should be mean centered and std scaled.
+
+            gt_label (Tensor): It should be of shape (N, 1) encoding the
+                ground-truth label of input images for single label task. It
+                shoulf be of shape (N, C) encoding the ground-truth label
+                of input images for multi-labels task.
+
+        Returns:
+            dict[str, Tensor]: a dictionary of loss components
+        """
+        if self.gpu_pipelines is not None:
+            with torch.no_grad(): 
+                image_list = []
+                for _ in range(2):
+                    mini_batch_holder = {'img': img.clone().detach()}
+                    mini_batch_holder[f'img_meta_dict'] = [a[f'img_meta_dict'] for a in img_metas]
+                    data_dict = self.aug_gpu_batch(mini_batch_holder)
+                    image_list.append(data_dict.pop('img'))
+                img1, img2 = image_list
+
+        # print_tensor('image1', img1)
+        # print_tensor('image2', img2)
+        feat1 = self.extract_feat(img1)
+        feat2 = self.extract_feat(img2)
+
+        losses = dict()
+        loss = self.head.forward_train(feat1, feat2)
+        losses.update(loss)
+
+        return losses
+
+import os
+
+    
