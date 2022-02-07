@@ -14,10 +14,11 @@ class ImageClassifierMed(ImageClassifier):
 
     def __init__(self, *args, 
                  gpu_aug_pipelines = None, 
+                 target_class = None, 
                  **kwargs
                  ):
         super(ImageClassifierMed, self).__init__(*args, **kwargs)
-
+        self.target_class = target_class
         self.gpu_pipelines = Compose(gpu_aug_pipelines) if gpu_aug_pipelines is not None else None
 
     @torch.no_grad()
@@ -34,6 +35,8 @@ class ImageClassifierMed(ImageClassifier):
 
         cls_gt_list = [m['img_meta_dict']['target_class'] for m in img_metas]
         gt_label = torch.tensor(cls_gt_list, dtype = torch.long, device=imgs.device) 
+        if isinstance(self.target_class, int):
+            gt_label = gt_label[:, self.target_class : self.target_class + 1]
         return data_dict['img'], gt_label
 
 
@@ -70,11 +73,12 @@ class ImageClassifierMed(ImageClassifier):
 
         return losses
 
-    def simple_test(self, img, img_metas):
+    def simple_test(self, img, img_metas, **kwargs):
         """Test without augmentation."""
         x = self.extract_feat(img)
         out_cls, gap_feat1d = self.head.simple_test(x)
-        return out_cls
+        out_score = out_cls.float().sigmoid().cpu().numpy()
+        return out_score
 
 
     def forward_train_cl(self, img, img_metas, **kwargs):
@@ -112,7 +116,4 @@ class ImageClassifierMed(ImageClassifier):
         losses.update(loss)
 
         return losses
-
-import os
-
     

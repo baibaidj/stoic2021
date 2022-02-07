@@ -5,9 +5,9 @@ _base_ = [
 ]
 
 data = dict(samples_per_gpu = 6, workers_per_gpu= 9, 
-            train=dict(sample_rate = 1.0, json_filename = 'case_info_5sources.csv', split='train'), 
-            val=dict(sample_rate = 1.0, json_filename = 'case_info_5sources.csv', split='test'), 
-            test= dict(sample_rate = 0.1, json_filename = 'case_info_5souces.csv', split='test')
+            train=dict(sample_rate = 1.0, fn2imglist = 'case_info_5sources.csv', split='train'), 
+            val=dict(sample_rate = 1.0, fn2imglist = 'case_info_5sources.csv', split='test'), 
+            test= dict(sample_rate = 0.1, fn2imglist = 'case_info_5souces.csv', split='test')
             )
             
 model = dict(

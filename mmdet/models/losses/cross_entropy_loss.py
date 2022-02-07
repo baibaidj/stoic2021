@@ -5,7 +5,7 @@ import torch.nn.functional as F
 
 from ..builder import LOSSES
 from .utils import weight_reduce_loss
-import pdb
+import ipdb
 
 def cross_entropy(pred,
                   label,
@@ -100,7 +100,6 @@ def binary_cross_entropy(pred,
     if pred.dim() != label.dim():
         label, weight = _expand_onehot_labels(label, weight, pred.size(-1),
                                               ignore_index)
-
     # weighted element-wise losses
     if weight is not None:
         weight = weight.float()
@@ -250,18 +249,13 @@ class CrossEntropyLoss(nn.Module):
             ignore_index=ignore_index,
             **kwargs)
         
-        if self.verbose: 
-            print(f'[CEloss] {loss_cls} avg factor {avg_factor} reduction {reduction} lossW {self.loss_weight}')
-        # pdb.set_trace()
         # if self.verbose: 
-        #     count_mask = weight > 0
-        #     # count_mask[:2] = 1
-        #     if count_mask.sum() > 0:
-        #         count_label = label[count_mask]
-        #         count_pred = cls_score[count_mask]
-        #         count_loss = self.cls_criterion(count_pred, count_label, reduction='none')[:, None]
-        #         count_pred_nxc = torch.cat([count_pred, torch.softmax(count_pred, dim = 1), count_label[:, None], count_loss], axis = 1)
-        #         pdb.set_trace()
-        #         # fg_counts, weight_counts = target.sum(), weight.sum()
-        #         print(f'[CELoss] fg logit gt loss clsw {class_weight} avgf {avg_factor} \n {count_pred_nxc[:8]}')
+        #     print(f'[CEloss] {loss_cls} avg factor {avg_factor} reduction {reduction} lossW {self.loss_weight}')
+        if self.verbose: 
+            with torch.no_grad():
+                count_loss = self.cls_criterion(cls_score, label, reduction='none')
+                count_pred_nxc = torch.cat([cls_score, torch.sigmoid(cls_score), label, count_loss], axis = 1)
+                # ipdb.set_trace()
+                # fg_counts, weight_counts = target.sum(), weight.sum()
+            print(f'[CELoss] fg logit gt loss clsw {class_weight} avgf {avg_factor} \n {count_pred_nxc[:8]}')
         return loss_cls

@@ -14,7 +14,7 @@ from .utils import (NumClassCheckHook, get_loading_pipeline,
 # from .voc import VOCDataset
 # from .wider_face import WIDERFaceDataset
 # from .xml_style import XMLDataset
-from .radioset import STOIC21Dataset #AllCTDataset
+from .radioset import STOIC21Dataset, AllCTDataset
 
 __all__ = [
     'CustomDataset', 
@@ -26,5 +26,5 @@ __all__ = [
     'ClassBalancedDataset', 'DATASETS', 'PIPELINES',
     'build_dataset', 'replace_ImageToTensor', 'get_loading_pipeline',
     'NumClassCheckHook',  'MultiImageMixDataset', 
-    'STOIC21Dataset', 
+    'STOIC21Dataset', 'AllCTDataset'
 ]

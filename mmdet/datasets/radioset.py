@@ -1,9 +1,9 @@
-from .custom_seg import CustomDatasetMonai, classifier_performance
+from .custom_seg import CustomDatasetMonai, ClassifierPerformanceBinary
 from .transform4med.io4med import (
     os, osp, load_string_list, np, 
     Path, convert_label, print_tensor)
 import pandas as pd
-
+import ipdb
 from .builder import DATASETS
 
 
@@ -15,14 +15,17 @@ class STOIC21Dataset(CustomDatasetMonai):
     fixed to '_gtFine_labelTrainIds.png' for Cityscapes dataset.
     """
     CLASSES = ('covid', 'severe')
+    AGE_MAP = {35: 0, 45: 1, 55: 2, 65: 3, 75: 4, 85: 5}
+    SEX_MAP = {'F': 0, 'M': 1, 'A': 2, 'O': 2, 'N': 2}
     
-    def __init__(self, *args, cv_fold = 0 , 
+    def __init__(self, *args, cv_fold = 0 , target_class = (0, 1),
                 prefix_dir = 'processed', file_extension = '.nii', 
                 **kwargs):
 
         self.cv_fold = cv_fold
         self.prefix_dir = prefix_dir
         self.file_extension = file_extension
+        self.target_class = target_class
 
         super(STOIC21Dataset, self).__init__(*args, **kwargs)
         self.gt_seg_maps = None
@@ -54,63 +57,32 @@ class STOIC21Dataset(CustomDatasetMonai):
         pathpairs_orderd = sorted(pid2pathpairs, key = lambda x: x['cid'])
         print(f'[RawCT] {len(pathpairs_orderd)} samples')
         return pathpairs_orderd
-    
 
-
-    def get_gt_seg_maps(self):
+    def get_cls_gt_labels(self):
         """Get ground truth segmentation maps for evaluation."""
         # if self.gt_seg_maps is not None:
         #     return self.gt_seg_maps
-        if getattr(self, 'gt_seg_maps', None) is not None:
-            return getattr(self, 'gt_seg_maps', None)
+        if getattr(self, 'gt_cls_labels', None) is not None:
+            return getattr(self, 'gt_cls_labels', None)
 
-        # attr_in_transform = lambda x, trans: [f for f in trans if hasattr(f, x)]
-        label_mapping = self.pipeline.transforms[1].label_mapping
-        value4outlier = getattr(self.pipeline.transforms[1], 'value4outlier', 0)
         # num_slices = self.pipeline.transforms[0].num_slice
-        gt_seg_maps = {}
+        gt_cls_labels = {}
         for i, img_info in enumerate(self.img_infos):
-            fp = Path(img_info['gt_semantic_seg'])
-            subdir = str(fp.stem) #view2axis[self.view_channel]
-            img_cls = min(int(subdir.split('_')[-1]), self.num_class_cls) - 1 # remove lumps class
-            # img_full, af_mat = IO4Nii.read(fp, verbose=True, axis_order= None, dtype=np.uint8)
-            img = self.reader.read(fp)
-            img_full, meta_data = self.reader.get_data(img)
-            af_mat = meta_data['original_affine']
-            if i < 3: 
-                print_tensor(f'\n[GT] {subdir} {self.view_channel}', img_full) #
-                print('[GT] af matrix\n', af_mat)
-            gt_seg_map  = np.array(img_full, dtype = np.uint8)
+            abs_fp = Path(img_info['img'])
+            target_cls, age_num, sex_num, subdir = self.stoic_class_from_fname(abs_fp)
+            # img_cls = min(int(subdir.split('_')[-1]), self.num_class_cls) - 1 # remove lumps class
             # print('Eval select transform', len(result_dicts))
             # pdb.set_trace()
-            gt_seg_maps.setdefault(subdir, {'gix':[], 'pix' :[], 'affine':None, 
-                                            'gt': [], 'gt_cls':[img_cls], 'ixs': []})
-            gt_seg_maps[subdir]['gix'].append(i)
-            gt_seg_maps[subdir]['affine'] = af_mat
+            gt_cls_labels.setdefault(subdir, {'gix':i, 
+                                            'pix' :0, 
+                                            'age':age_num, 
+                                            'sex': sex_num, 
+                                            'gt_cls': np.array(target_cls)})
 
-            if self.reduce_zero_label:
-                # avoid using underflow conversion
-                gt_seg_map[gt_seg_map == 0] = 255
-                gt_seg_map = gt_seg_map - 1
-                gt_seg_map[gt_seg_map == 254] = 255
-            if label_mapping is not None: gt_seg_map = convert_label(gt_seg_map, label_mapping, 
-                                                        value4outlier = value4outlier)
+        self.gt_cls_labels = gt_cls_labels
+        return gt_cls_labels
 
-            if i < 3: print_tensor(f'gt-convertlabel {label_mapping}' , gt_seg_map) #
-            # print('eval, mask', gt_seg_map.shape, gt_seg_map.min(), gt_seg_map.max())
-            gt_seg_maps[subdir]['gt'].append(gt_seg_map)
-        self.gt_seg_maps = gt_seg_maps
-        return gt_seg_maps
-
-    def get_cls_gt_labels(self):
-        gt_seg_maps = self.get_gt_seg_maps()
-        cls_gt_labels = []
-        for pid, info in gt_seg_maps.items():
-            cls_gt_labels.extend(info['gt_cls'])
-        return cls_gt_labels
-        
-
-    def evaluate(self, results, metric='mIoU', logger=None, **kwargs):
+    def evaluate(self, results, metric='auc', logger=None, return_casewise = False, **kwargs):
         """Evaluate the dataset. will be called by core/evalutation/eval_hooks.py
 
         Args:
@@ -126,33 +98,100 @@ class STOIC21Dataset(CustomDatasetMonai):
         if not isinstance(metric, str):
             assert len(metric) == 1
             metric = metric[0]
-        allowed_metrics = ['mIoU']
+        allowed_metrics = ['auc', 'recall', 'ppv', 'acc']
         if metric not in allowed_metrics:
             raise KeyError('metric {} is not supported'.format(metric))
 
         eval_results = {}
-        gt_by_pids = self.get_gt_seg_maps()
-
-        num_classes_cls = len(self.CLASSES)
+        gtcls_by_pids = self.get_cls_gt_labels()
 
         i = 0
         result_by_pids = []
-        for i, (pid, info) in enumerate(gt_by_pids.items()): 
-            *_, cls_probs = results[info['gix'][0]]
-            this_holder = {'pid': pid} 
-            pred_prob, pred_catg, gt_catg = cls_probs.max(), int(cls_probs.argmax()), info['gt_cls'][0]
-            this_holder.update({'cls_gt_catg': gt_catg, 'cls_gt_name': self.CLASSES[gt_catg], 
-                                'cls_pred_catg': pred_catg, 'cls_pred_name' : self.CLASSES[pred_catg], 
-                                'cls_pred_prob': pred_prob, 'cls_pred_raw': cls_probs})
-
-            # if i < 2: print_tensor(f'[Metric]{pid} pred {np.unique(pred_tensor)}', pred_tensor)
-            # if i < 2: print_tensor(f'[Metric]{pid} gt {np.unique(gt_tensor)}', gt_tensor)
-            if i < 2: print(this_holder)
+        num_pred_cls = len(self.CLASSES)
+        for ip, (pid, info) in enumerate(gtcls_by_pids.items()):  
+            pred_prob = results[info['gix']]
+            this_holder = {'pid': pid}
+            pred_catg = pred_prob > 0.5
+            gt_catg = info['gt_cls']
+            for i, prob in enumerate(pred_prob):
+                this_holder[f'cls{i}_gt_catg'] = gt_catg[i]
+                this_holder[f'cls{i}_gt_name'] = self.CLASSES[i] if gt_catg[i] else 'BG'
+                this_holder[f'cls{i}_pred_catg'] = pred_catg[i]
+                this_holder[f'cls{i}_pred_name'] = self.CLASSES[i] if pred_catg[i] else 'BG'
+                this_holder[f'cls{i}_pred_prob'] = float(pred_prob[i])
+            if ip < 2: 
+                num_pred_cls = pred_prob.shape[-1]
+                print(this_holder)
             result_by_pids.append(this_holder)
-            i += 1
+
+        eval_results = {}
+        for cls_i in range(num_pred_cls):
+            cls_name = self.CLASSES[cls_i]
+            # ipdb.set_trace()
+            cls_results = np.vstack([a[f'cls{cls_i}_pred_prob'] for a in result_by_pids])
+            gt_labels = np.vstack([a[f'cls{cls_i}_gt_catg'] for a in result_by_pids])
+            eval_results_i = ClassifierPerformanceBinary(gt_labels, cls_results, cls_name = cls_name)
+            eval_results.update(eval_results_i)
+
+        eval_results[metric] =  np.mean([eval_results[f'{self.CLASSES[cls_i]}_{metric}'] for 
+                                        cls_i in range(num_pred_cls)])
+        if return_casewise: 
+            return eval_results, result_by_pids
+        else: 
+            return eval_results
+
+    def stoic_class_from_fname(self, abs_path):
+        fname = str(abs_path).split('/')[-1].split('.')[0]
+        pid, age, sex, covid, severe = fname.split('_')
+        age = age[3:]
+        sex = sex[3:]
+        covid = int(covid[5:])
+        severe = int(severe[6:])
+        age_num = self.AGE_MAP[int(age[1:-1]) if len(age) > 2 else int(age)]
+        sex_num = self.SEX_MAP.get(sex, 2)
+        target_cls = [covid, severe]
+        return target_cls, age_num, sex_num, pid
+
+
+
+
+@DATASETS.register_module()
+class AllCTDataset(CustomDatasetMonai):
+    """Pneumonia dataset.
+
+    The ``img_suffix`` is fixed to '_leftImg8bewdcfit.png' and ``seg_map_suffix`` is
+    fixed to '_gtFine_labelTrainIds.png' for Cityscapes dataset.
+    """
+    CLASSES = ('bg', 'fg')
+    def __init__(self, *args, exclude_pids = None, **kwargs):
+        super(AllCTDataset, self).__init__(*args, exclude_pids = exclude_pids, **kwargs)
+
+        self.gt_seg_maps = None
+        self.flag = np.ones(len(self), dtype=np.uint8)
+
+
+    
+    def _img_list2dataset(self, data_folder:str, **kwags):
+        """
         
-        # pdb.set_trace()
-        cls_results = np.vstack([a.pop('cls_pred_raw') for a in result_by_pids])
-        gt_labels = np.vstack([a['cls_gt_catg'] for a in result_by_pids])
-        eval_results = classifier_performance(cls_results, gt_labels)
-        return eval_results, result_by_pids
+        return 
+            file_list : [{'image' : img_path, 'label' : label_path}, ...]
+        """
+        # a = [print(self.map_key(k)) for k in keys]
+        js_fp = os.path.join(data_folder, self.fn2imglist)
+        if not osp.exists(js_fp): return []
+        if js_fp.endswith('txt'):
+            image_fps = load_string_list(js_fp)
+        elif js_fp.endswith('csv'):
+            case_tb = pd.read_csv(js_fp)
+            image_fps = case_tb['img_path']
+
+        pid2pathpairs = []
+        for ifp  in image_fps:
+            cid = ifp.split(os.sep)[-1].split('.')[0]
+            this_pair = {'cid': cid, 'img': ifp}
+            pid2pathpairs.append(this_pair)
+        pathpairs_orderd = sorted(pid2pathpairs, key = lambda x: x['cid'])
+        print(f'[RawCT] {len(pathpairs_orderd)} samples')
+        return pathpairs_orderd
+    

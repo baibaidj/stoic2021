@@ -6,9 +6,10 @@ from ..builder import HEADS
 from .cls_head import ClsHead, Accuracy
 from .neck_gap import GlobalAveragePooling
 from mmcv.utils.parrots_wrapper import _BatchNorm
+import torch.nn.functional as F
 
 from ..utils.implicit_semantic_data_aug import ISDALossCls
-import pdb
+import ipdb
 
 print_tensor = lambda n, x: print(n, type(x), x.dtype, x.shape, x.min(), x.max())
 
@@ -34,6 +35,8 @@ class LinearClsHead(ClsHead):
                  isda_lambda = 2.5,
                  start_iters = 1,
                  max_iters = 4e5,
+                 add_feat_dist = False, 
+                #  is_multi_task = False, 
                  verb = False
                  ):
         super(LinearClsHead, self).__init__(loss=loss, topk=topk)
@@ -45,8 +48,8 @@ class LinearClsHead(ClsHead):
         self.isda_lambda = isda_lambda
         self._iter = start_iters
         self._max_iters = max_iters
+        self.add_feat_dist = add_feat_dist
         # self.output_gap_feat1d = output_gap_feat1d
-
         self.use_sigmoid_cls = loss.get('use_sigmoid', False)
         if self.use_sigmoid_cls:
             self.cls_out_channels = num_classes
@@ -71,13 +74,40 @@ class LinearClsHead(ClsHead):
         if is_use_isda:
             self.isda_augmentor = ISDALossCls(self.in_channels, self.cls_out_channels)
         
-        self.compute_accuracy = Accuracy(topk=self.topk, thresh=0.5, is_multi_task = True)
+        self.compute_accuracy = Accuracy(topk=self.topk, thresh=0.5, 
+                                        is_multi_task = True)
 
     def _init_layers(self):
-        self.fc = nn.Linear(self.in_channels, self.cls_out_channels)
+        if self.add_feat_dist:
+            self.fc4cls0 = nn.ModuleList([
+                                nn.Sequential(
+                                    nn.Linear(self.in_channels, self.in_channels//4), 
+                                    nn.LayerNorm(self.in_channels //4), 
+                                    nn.GELU()), 
+                            nn.Linear(self.in_channels//4, 1)])
+            # self
+            self.fc4cls1 = nn.ModuleList([
+                                nn.Sequential(
+                                    nn.Linear(self.in_channels, self.in_channels//4), 
+                                    nn.LayerNorm(self.in_channels //4), 
+                                    nn.GELU()), 
+                            nn.Linear(self.in_channels//4, 1)])
+        
+        else:
+            self.fc = nn.Linear(self.in_channels, self.cls_out_channels)
+
 
     def init_weights(self):
-        normal_init(self.fc, mean=0, std=0.01, bias=0)
+        if self.add_feat_dist:
+            for m in self.fc4cls0:
+                if isinstance(m, nn.Linear):
+                    normal_init(m, mean=0, std=0.01, bias=0)
+            for m in self.fc4cls1:
+                if isinstance(m, nn.Linear):
+                    normal_init(m, mean=0, std=0.01, bias=0)
+        else:
+            normal_init(self.fc, mean=0, std=0.01, bias=0)
+
 
     def forward_train(self, x, gt_label, train_cfg = None):
         # gt_vector = gt_label.view(gt_label.shape[0], -1).max(-1).values
@@ -89,18 +119,44 @@ class LinearClsHead(ClsHead):
         if self.dropout is not None: ip = self.dropout(ip) 
         ip_dtype = ip.dtype
         with torch.cuda.amp.autocast(enabled = False):
-            gap_out = self.gap(ip.float())
+            gap_out = self.gap(ip.float()) # b1c > b2c? 
 
         if self.verb: print_tensor('[ClsHead] post gap', gap_out)
-        cls_score = self.fc(gap_out)
+        # # feat distance
+        # neg_mask = gt_label[:, 0] == 0
+        # mild_mask = (gt_label[:, 0] == 1) * (gt_label[:, 1] == 0) # if two category have the same values
+        # severe_mask = gt_label[:, 1] == 1
+        # c2c_distance = (neg_mask * 1 + severe_mask * 3 + mild_mask * 6).float()
+
+        # ipdb.set_trace()
+        if self.add_feat_dist:
+            feat4cls0 = self.fc4cls0[0](gap_out) # bc
+            feat4cls1 = self.fc4cls1[0](gap_out) # bc
+
+            cls_score0 = self.fc4cls0[1](feat4cls0)
+            cls_score1 = self.fc4cls1[1](feat4cls1)
+            cls_score = torch.cat([cls_score0, cls_score1], dim = 1)
+
+            # feat_distance = torch.linalg.norm(feat4cls0 - feat4cls1, 2, dim = 1)
+            # dist_loss = F.smooth_l1_loss(feat_distance, c2c_distance, reduction= 'mean') * 0.3
+        else:
+            cls_score = self.fc(gap_out)
+            # logit distance
+            # logit_distance = torch.abs(cls_score[:, 0] - cls_score[:, 1])
+            # dist_loss = F.smooth_l1_loss(logit_distance, c2c_distance, reduction= 'mean') * 0.3
+
         if self.verb: print_tensor('[ClsHead] score', cls_score)
 
         if self.is_use_isda:
             ratio = min(self.isda_lambda * self._iter, self._max_iters) / self._max_iters
             cls_score = self.isda_augmentor(x.detach(), self.fc, cls_score, gt_label, ratio)
             self._iter += 1
-
+        # ipdb.set_trace()
         losses = self.loss(cls_score, gt_vector)
+
+        # losses['loss'] = losses['loss'] + dist_loss 
+        # losses['dist_loss'] = dist_loss
+
         return losses, gap_out
     
     def simple_test(self, x):
@@ -110,14 +166,22 @@ class LinearClsHead(ClsHead):
         """
         ip = x[self.in_index] if isinstance(x, (tuple, list)) else x
         gap_out = self.gap(ip)
-        cls_score = self.fc(gap_out)
+        if self.add_feat_dist:
+            feat4cls0 = self.fc4cls0[0](gap_out) # bc
+            feat4cls1 = self.fc4cls1[0](gap_out) # bc
+
+            cls_score0 = self.fc4cls0[1](feat4cls0)
+            cls_score1 = self.fc4cls1[1](feat4cls1)
+            cls_score = torch.cat([cls_score0, cls_score1], dim = 1)
+        else:
+            cls_score = self.fc(gap_out)
         if isinstance(cls_score, list):
             cls_score = sum(cls_score) / float(len(cls_score))
         pred = cls_score
         if torch.onnx.is_in_onnx_export():
             return pred
         # pred = list(pred.detach().cpu().numpy())
-        return pred, gap_out
+        return pred, gap_out 
 
 
 

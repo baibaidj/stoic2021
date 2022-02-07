@@ -6,6 +6,7 @@ from typing import Sequence, List
 from ..builder import NECKS
 from ..utils.ccnet_pure import print_tensor
 from ..utils import nan_hook
+import ipdb
 # from mmdet.models.backbones.convnext_3d import CNextBlock3D
 
 
@@ -78,7 +79,7 @@ class FPN3D2022(BaseModule):
                  act_cfg=None, verbose = False, 
                  kernel_size = 5, 
                  upsample_cfg=dict(type='deconv3d', mode=None, use_norm = False, 
-                                    kernel_size = (2,2,2), stride = (2,2,2) ),
+                                    kernel_size = (2,2,2), stride = (2,2,2), end_level = 0),
                  init_cfg=dict(
                      type='Xavier', layer='Conv3d', distribution='uniform'), 
                  is_double_chn = True,     
@@ -94,6 +95,7 @@ class FPN3D2022(BaseModule):
         self.fp16_enabled = False
         self.upsample_mode = upsample_cfg.pop('mode', None)
         self.upsample_use_norm = upsample_cfg.pop('use_norm', False)
+        self.upsample_end_level = upsample_cfg.pop('end_level', 0)
         self.deconv_cfg = upsample_cfg.copy()
         self.min_out_channels = min_out_channels
         self.kernel_size = kernel_size
@@ -115,6 +117,7 @@ class FPN3D2022(BaseModule):
         elif add_extra_convs:  # True
             self.add_extra_convs = 'on_input'
 
+        
         self.out_channels = self.compute_output_channels(is_double_chn)
         self.up_ops = self.build_upsample_layers(conv_cfg, norm_cfg = norm_cfg if self.upsample_use_norm else None)
         print(f'[FPN3D] input channels {self.in_channels} out channels {self.out_channels} upmode {self.up_ops[-1]}')
@@ -190,7 +193,7 @@ class FPN3D2022(BaseModule):
         """
         up_ops = nn.ModuleList()
         for i in range(0, self.backbone_end_level):
-            if i == 0:
+            if i < self.upsample_end_level:
                 up_ops.append(nn.Identity())
             else:
                 if self.upsample_mode is not None:

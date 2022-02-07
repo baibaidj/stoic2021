@@ -1,7 +1,8 @@
 
 from .focal_loss import (
     torch, nn, F, LOSSES, weight_reduce_loss,
-    print_tensor, pdb )
+    print_tensor, )
+import ipdb
 
 
 def focal_loss_with_prob_multitask(pred,
@@ -37,8 +38,8 @@ def focal_loss_with_prob_multitask(pred,
     target = target.type_as(pred)
     pt = (1 - pred) * target + pred * (1 - target)
     focal_weight = (alpha * target + (1 - alpha) * (1 - target)) * pt.pow(gamma)
-    loss = F.binary_cross_entropy(
-        pred, target, reduction='none') * focal_weight
+    loss_bce = F.binary_cross_entropy(pred, target, reduction='none') 
+    loss = loss_bce * focal_weight
     if weight is not None:
         if weight.shape != loss.shape:
             if weight.size(0) == loss.size(0):
@@ -53,12 +54,21 @@ def focal_loss_with_prob_multitask(pred,
                 assert weight.numel() == loss.numel()
                 weight = weight.view(loss.size(0), -1)
         assert weight.ndim == loss.ndim
-    
+    # ipdb.set_trace()
     if class_weight is not None:
-        for i, w in enumerate(class_weight):
-            loss[:, i] = loss[:, i] * class_weight[i]
+        loss = loss * class_weight[None, :]
+    
+    loss_by_class = loss.mean(dim = 0)
+    loss = loss_by_class.sum()
 
-    loss = weight_reduce_loss(loss, weight, reduction, avg_factor)
+    # loss = weight_reduce_loss(loss, weight, reduction, avg_factor)
+    # print('prob', pred)
+    # print('target', target)
+    # print('loss_bce\n', loss_bce)
+    # print('loss_weight\n', focal_weight)
+    # print(f'[SumLoss] by class {loss_by_class} final {loss} ')
+
+    # ipdb.set_trace()
     return loss
 
 
@@ -130,6 +140,10 @@ class FocalLossMultitask(nn.Module):
         assert reduction_override in (None, 'none', 'mean', 'sum')
         reduction = (
             reduction_override if reduction_override else self.reduction)
+        
+        if isinstance(self.class_weight, (tuple, list)):
+            self.class_weight = pred.new_tensor(self.class_weight)
+
         if self.use_sigmoid:
             
             if self.perform_act:
@@ -157,7 +171,7 @@ class FocalLossMultitask(nn.Module):
                 # fg_counts, weight_counts = target.sum(), weight.sum()
                 print_tensor('[Focalloss] target cls', target)
                 print(f'[Focalloss] fg logit gt loss \n {fg_pred_nxc[:16]}', fg_pred_nxc.shape)
-                pdb.set_trace()
+                ipdb.set_trace()
                 # counts fg-{fg_counts} weight-{weight_counts},
                 # print_tensor(f'[FocalLoss] pred', pred )
                 # print_tensor(f'[Focalloss] gt', target)

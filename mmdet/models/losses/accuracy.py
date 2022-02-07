@@ -2,6 +2,7 @@
 import mmcv
 import torch.nn as nn
 import torch
+import ipdb
 
 
 @mmcv.jit(coderize=True)
@@ -108,6 +109,8 @@ def accuracy_multi_task(pred : torch.Tensor, target, thresh=0.5):
     if pred.shape[0] == 0:
         accu = [pred.new_tensor(0.) for _ in range(num_class)]
         return accu
+        
+    # if num_class == 1: pred = pred.squeeze(dim = -1)
     assert pred.ndim == target.ndim, \
         f'pred should have the same dimension as target, pred {pred.shape} target {target.shape}'
     assert pred.size(0) == target.size(0)

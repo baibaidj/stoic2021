@@ -1,8 +1,12 @@
 import argparse
-import os
+import os, sys
 import os.path as osp
-import time
+import time, ipdb
 import warnings
+user_home = os.environ['HOME']
+conflict_rts = [f'{user_home}/git/mmseg4med', f'{user_home}/git/MONAI', f'{user_home}/git/mmdet4med']
+for rt in conflict_rts:
+    if rt in sys.path: sys.path.remove(rt)
 
 import mmcv
 import torch
@@ -16,7 +20,7 @@ from mmdet.apis import multi_gpu_test4med, single_gpu_test4med
 from mmdet.datasets import (build_dataloader, build_dataset,
                             replace_ImageToTensor)
 from mmdet.models import build_detector
-
+import pandas as pd
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -115,7 +119,7 @@ def main():
     if args.eval and args.format_only:
         raise ValueError('--eval and --format_only cannot be both specified')
 
-    if args.out is not None and not args.out.endswith(('.pkl', '.pickle')):
+    if args.out is not None and not args.out.endswith(('.pkl', '.pickle', '.csv')):
         raise ValueError('The output file must be a pkl file.')
 
     cfg = Config.fromfile(args.config)
@@ -211,9 +215,9 @@ def main():
 
     rank, _ = get_dist_info()
     if rank == 0:
-        if args.out:
-            print(f'\nwriting results to {args.out}')
-            mmcv.dump(outputs, args.out)
+        # if args.out:
+        #     print(f'\nwriting results to {args.out}')
+        #     mmcv.dump(outputs, args.out)
         kwargs = {} if args.eval_options is None else args.eval_options
         if args.format_only:
             dataset.format_results(outputs, **kwargs)
@@ -226,11 +230,16 @@ def main():
             ]:
                 eval_kwargs.pop(key, None)
             eval_kwargs.update(dict(metric=args.eval, **kwargs))
-            metric = dataset.evaluate(outputs, **eval_kwargs)
+            metric, result_by_pids = dataset.evaluate(outputs, return_casewise = True, **eval_kwargs)
             print(metric)
             metric_dict = dict(config=args.config, metric=metric)
             if args.work_dir is not None and rank == 0:
                 mmcv.dump(metric_dict, json_file)
+            
+            if args.out: 
+                tb = pd.DataFrame(result_by_pids)
+                print(tb.info())
+                tb.to_csv(args.out, index = False)
 
 
 if __name__ == '__main__':

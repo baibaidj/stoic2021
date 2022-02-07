@@ -38,13 +38,15 @@ class ClsHead(BaseHead):
         losses = dict()
         # compute loss
         with torch.cuda.amp.autocast(enabled = False):
-            loss = self.compute_loss(cls_score, gt_label, avg_factor=num_samples)
+            loss = self.compute_loss(cls_score.float(), gt_label, avg_factor=num_samples)
         # compute accuracy
         with torch.no_grad():
             acc = self.compute_accuracy(cls_score, gt_label)
         # assert len(acc) == len(self.topk)
         losses['loss'] = loss
+
         for k, a in enumerate(acc): losses[f'acc_cls{k}'] = a
+        # else:losses[f'acc_cls'] = acc
         # losses['accuracy'] = {f'top-{k}': a for k, a in zip(self.topk, acc)}
         return losses
 

@@ -1,6 +1,6 @@
 # dataset settings
-dataset_type = 'STOIC21Dataset'
-img_dir = 'data/STOIC2021Round1'
+dataset_type = 'AllCTDataset'
+img_dir = 'data/Task100_All_pretrain'
 in_channel=  1
 norm_param = {
     "mean": -86.8, "std": 443.8, "median": 111,
@@ -17,7 +17,7 @@ patch_size = (224, 224, 192)  # [160 192 112] # xyz
 train_pipeline = [
     dict(type = 'LoadImaged', keys = keys, reader = 'NibabelReader'),  # img_meta_dict see mmseg.datasets.pipeline.transform_moani
     dict(type = 'AddChanneld', keys= keys), 
-    dict(type = 'AddInfo2Meta', key = 'img_meta_dict', sub_key = 'filename_or_obj'), 
+    # dict(type = 'ConvertLabeld', keys = 'gt_semantic_seg',  label_mapping = label_mapping), 
     dict(type = 'RandCropByLabelBBoxRegiond', keys=keys,
                                         label_key='img',
                                         spatial_size= ext_patch_size, 
@@ -34,7 +34,7 @@ train_pipeline = [
     dict(type = 'CastToTyped_', keys = keys,  dtype=dtypes), 
     dict(type = 'ToTensord', keys = keys),
     dict(type = 'RandFlipd_', keys = keys, spatial_axis=(0, 1), prob=0.4),
-    dict(type = 'RandFlipd_', keys = keys, spatial_axis=(2, ), prob=0.4), 
+    dict(type = 'RandFlipd_', keys = keys, spatial_axis=(2, ), prob=0.4),
     # dict(type = 'RideOnLabel', keys = {'seg': ('seg', 'skeleton') }, cat_dim = 0),
     # dict(type = 'DataStatsd', keys = keys, prefix = 'Final'), 
     dict(type='FormatShapeMonai', verbose = False, keys = keys[:core_key_num],  channels = in_channel),
@@ -82,21 +82,21 @@ data = dict(
     train=dict(
         type=dataset_type, img_dir=img_dir, 
         sample_rate = train_sample_rate, split='train',
-        pipeline=train_pipeline, cv_fold = 0,
-        fn2imglist = 'stoic2021_case_info_split.csv',
+        pipeline=train_pipeline,  
+        fn2imglist = 'case_info_szall.csv',
         ),
     val=dict(
         type=dataset_type, img_dir=img_dir, 
         sample_rate = val_sample_rate, split='test', 
-        pipeline=test_pipeline, cv_fold = 0,
-        fn2imglist = 'stoic2021_case_info_split.csv',
+        pipeline=test_pipeline,
+        fn2imglist = 'case_info_szall.csv',
         # fn_spliter = ['-', 0]
         ),
     test=dict(
         type=dataset_type, img_dir=img_dir, 
         sample_rate = 1.0, split='test', 
-        pipeline=test_pipeline, cv_fold = 0,
-        fn2imglist = 'stoic2021_case_info_split.csv',
+        pipeline=test_pipeline, 
+        fn2imglist = 'case_info_szall.csv',
         ))
 
 gpu_aug_pipelines = [
@@ -107,7 +107,7 @@ gpu_aug_pipelines = [
             spatial_size=patch_size, 
             rotate_range=[15] * 3, #rotate_angle * np.pi / 180.0
             translate_range = [4] * 3, 
-            scale_range=[0.15] * 3,
+            scale_range=[0.2] * 3,
             prob=1.0,
             mode=interp_modes[:core_key_num], 
             verbose=False
@@ -120,6 +120,6 @@ gpu_aug_pipelines = [
                     ),
         dict(type = 'RandGaussianNoised_', keys='img', prob=0.4, std=0.05), 
         # dict(type = 'SaveImaged', keys = keys[:core_key_num], 
-        #     output_dir = f'work_dirs/convnext_s32c64em4_stoic2kcv05_224x224x192_covid/debug', 
+        #     output_dir = f'work_dirs/simmim_convnext_s32c64em4_lung_224x224x192_100eps/debug', 
         #     resample = False, save_batch = True, on_gpu = True),    
         ]

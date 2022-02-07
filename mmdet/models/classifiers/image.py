@@ -14,7 +14,8 @@ class ImageClassifier(BaseClassifier):
                  head=None,
                  train_cfg=None, 
                  test_cfg = None, 
-                 init_cfg = None):
+                 init_cfg = None, 
+                 **kwargs):
         super(ImageClassifier, self).__init__(init_cfg)
 
         self.backbone = build_backbone(backbone)

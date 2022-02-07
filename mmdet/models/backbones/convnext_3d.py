@@ -122,11 +122,10 @@ class ConvNeXt3D(BaseModule):
         #     LayerNorm(dims[0], eps=1e-6, data_format="channels_first")
         # )
         # self.downsample_layers.append(stem)
-    
         for i in range(self.num_stages - 1):
             downsample_layer = nn.Sequential(
                 nn.Identity() if i == 0 else LayerNorm(dims[i], eps=1e-6, data_format="channels_first"),
-                nn.Conv3d(dims[i], dims[i+1], kernel_size=2, stride=2),
+                nn.Identity() if i == 0 and self.strides[0] == 4 else nn.Conv3d(dims[i], dims[i+1], kernel_size=2, stride=2),
             )
             self.downsample_layers.append(downsample_layer)
 
@@ -167,6 +166,7 @@ class ConvNeXt3D(BaseModule):
         if d = 1, p = (k + i *(s -1) -s)/2
 
         """
+
         stem_channel_div = stem_cfg.get('conv1_chn_div', 1)
         conv1kernel = stem_cfg.get('conv1kernel', 3)
         conv1stride = stem_cfg.get('conv1stride', 1)
@@ -175,31 +175,44 @@ class ConvNeXt3D(BaseModule):
         conv2stride = stem_cfg.get('conv2stride', 1)
         conv2pad = (conv2kernel - 1 )//2
         
-        stem_layer = nn.Sequential(
+        if conv1stride == 4:
+            stem_layer = nn.Sequential(
             build_conv_layer(
                 self.conv_cfg,
                 in_channels,
-                stem_channels // stem_channel_div, # 
-                kernel_size=[conv1kernel] *3,
+                stem_channels, # 
+                kernel_size=[conv1stride] * 3,
                 stride=[conv1stride] * 3,
-                padding=[conv1pad] * 3,
                 bias=False),
-            LayerNorm(stem_channels // stem_channel_div, eps=1e-6, data_format="channels_first"), 
-            # build_norm_layer(self.norm_cfg, stem_channels)[1], #// 2
-            nn.GELU(),
-            build_conv_layer(
-                self.conv_cfg,
-                stem_channels // stem_channel_div,#
-                stem_channels ,#// 2
-                kernel_size=[conv2kernel] *3,
-                stride= [conv2stride] * 3,
-                padding=[conv2pad] * 3,
-                bias=False),
-            LayerNorm(stem_channels, eps=1e-6, data_format="channels_first"), 
-            # build_norm_layer(self.norm_cfg, stem_channels)[1],#// 2
-            nn.GELU(),
+            LayerNorm(stem_channels, eps=1e-6, data_format="channels_first")
             )
+        else:
+            stem_layer = nn.Sequential(
+                build_conv_layer(
+                    self.conv_cfg,
+                    in_channels,
+                    stem_channels // stem_channel_div, # 
+                    kernel_size=[conv1kernel] *3,
+                    stride=[conv1stride] * 3,
+                    padding=[conv1pad] * 3,
+                    bias=False),
+                LayerNorm(stem_channels // stem_channel_div, eps=1e-6, data_format="channels_first"), 
+                # build_norm_layer(self.norm_cfg, stem_channels)[1], #// 2
+                nn.GELU(),
+                build_conv_layer(
+                    self.conv_cfg,
+                    stem_channels // stem_channel_div,#
+                    stem_channels ,#// 2
+                    kernel_size=[conv2kernel] *3,
+                    stride= [conv2stride] * 3,
+                    padding=[conv2pad] * 3,
+                    bias=False),
+                LayerNorm(stem_channels, eps=1e-6, data_format="channels_first"), 
+                # build_norm_layer(self.norm_cfg, stem_channels)[1],#// 2
+                nn.GELU(),
+                )
         return stem_layer
+
 
     def _freeze_stages(self):
         if self.frozen_stages >= 0:
@@ -263,6 +276,7 @@ class ConvNeXt3D4SimMIM(ConvNeXt3D):
             x_out = norm_layer(x)
             # print_tensor(f'[ConvNext] level {i} out', x_out) 
             outs.append(x_out)
+        # ipdb.set_trace()
 
         return tuple([outs[i] for i in self.out_indices])
 
