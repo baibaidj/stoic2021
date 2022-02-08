@@ -37,7 +37,10 @@ class ImageClassifierMed(ImageClassifier):
         gt_label = torch.tensor(cls_gt_list, dtype = torch.long, device=imgs.device) 
         if isinstance(self.target_class, int):
             gt_label = gt_label[:, self.target_class : self.target_class + 1]
-        return data_dict['img'], gt_label
+        ages = torch.tensor([m['img_meta_dict']['age'] for m in img_metas], 
+                            dtype = imgs.dtype, device = imgs.device)
+
+        return data_dict['img'], gt_label, ages
 
 
     def extract_feat(self, img):
@@ -65,20 +68,75 @@ class ImageClassifierMed(ImageClassifier):
         """
 
         # print_tensor('rawgt', gt_semantic_seg) # {key: [meta1, meta],}
-        img, gt_label = self.update_img_metas(img, img_metas)
+        img, gt_label, age_step = self.update_img_metas(img, img_metas)
         x = self.extract_feat(img)
         losses = dict()
-        loss, gap_feat1d = self.head.forward_train(x, gt_label, self.train_cfg)
+        loss, gap_feat1d = self.head.forward_train(x, gt_label, age_step, self.train_cfg)
         losses.update(loss)
 
         return losses
 
     def simple_test(self, img, img_metas, **kwargs):
         """Test without augmentation."""
+        age_step = torch.tensor([m['img_meta_dict']['age'] for m in img_metas], 
+                            dtype = img.dtype, device = img.device)
         x = self.extract_feat(img)
-        out_cls, gap_feat1d = self.head.simple_test(x)
+        out_cls, gap_feat1d = self.head.simple_test(x, age_step)
         out_score = out_cls.float().sigmoid().cpu().numpy()
         return out_score
+
+
+    def aug_test(self, imgs, img_metas, **kwargs):
+        """Test with augmentations.
+
+        Only rescale=True is supported.
+        """
+        # aug_test rescale all imgs back to ori_shape for now
+        # to save memory, we get augmented seg logit inplace
+        # print(img_metas)
+        out_score = self.simple_test(imgs[0], img_metas[0], **kwargs)
+        imgs[0] = None; torch.cuda.empty_cache()
+        infer_times = 1
+        # print('aug, post inference', seg_logit.shape)
+        for i in range(1, len(imgs)):
+            out_score_cur = self.simple_test(imgs[i], img_metas[i], **kwargs)
+            # Cumulvate Moving Average: CMA_n+1 = (X_n+1 + n * CMA_n)/ (n + 1); CMA_n = (x1 + x2 + ...) / n
+            out_score = (out_score_cur + out_score * infer_times) / (infer_times + 1)
+            infer_times += 1
+            imgs[i] = None; torch.cuda.empty_cache()
+        return out_score
+
+
+    def forward_test(self, imgs, img_metas, **kwargs):
+        """
+        Args:
+            imgs (List[Tensor]): the outer list indicates test-time
+                augmentations and inner Tensor should have a shape NxCxHxW,
+                which contains all images in the batch.
+        """
+        if isinstance(imgs, torch.Tensor):
+            imgs = [imgs]
+        for var, name in [(imgs, 'imgs')]:
+            if not isinstance(var, list):
+                raise TypeError(f'{name} must be a list, but got {type(var)}')
+
+        num_augs = len(imgs)
+        if num_augs != len(img_metas):
+            raise ValueError(f'num of augmentations ({len(imgs)}) '
+                            f'!= num of image meta ({len(img_metas)})')
+
+        # NOTE the batched image size information may be useful, e.g.
+        # in DETR, this is needed for the construction of masks, which is
+        # then used for the transformer_head.
+        for img, img_meta in zip(imgs, img_metas):
+            batch_size = len(img_meta)
+            for img_id in range(batch_size):
+                img_meta[img_id]['batch_input_shape'] = tuple(img.size()[-3:])
+
+        if len(imgs) == 1:
+            return self.simple_test(imgs[0], img_metas[0], **kwargs)
+        else:
+            return self.aug_test(imgs, img_metas, **kwargs)
 
 
     def forward_train_cl(self, img, img_metas, **kwargs):

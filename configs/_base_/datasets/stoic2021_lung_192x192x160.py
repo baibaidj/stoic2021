@@ -12,8 +12,8 @@ keys = ('img', ) #, seg='instance_seg'
 dtypes = ('float', ) # , 'float', 
 interp_modes = ("bilinear", )  #  , "bilinear", 'nearest'
 core_key_num = 1
-ext_patch_size = (240, 240, 240) # avoid artifacts such as boarder reflection
-patch_size = (224, 224, 192)  # [160 192 112] # xyz
+ext_patch_size = (224, 224, 192) # avoid artifacts such as boarder reflection
+patch_size = (192, 192, 160)  # [160 192 112] # xyz
 train_pipeline = [
     dict(type = 'LoadImaged', keys = keys, reader = 'NibabelReader'),  # img_meta_dict see mmseg.datasets.pipeline.transform_moani
     dict(type = 'AddChanneld', keys= keys), 
@@ -27,7 +27,7 @@ train_pipeline = [
                                         percentile_00_5=-900,
                                         return_keys= 'all', #['image', 'label'], 
                                         # data_info_csv = f'{img_dir}/case_info_records_skeleton.csv',
-                                        custom_center_kargs = {'base_value': None, 'jitter': (8, 8, 9)}
+                                        custom_center_kargs = {'base_value': None, 'jitter': (8, 8, 10)}
                                         ),
     dict(type = 'SpatialPadd_', keys=keys, spatial_size= ext_patch_size, # padshape
                                 mode='reflect', verbose = False),  

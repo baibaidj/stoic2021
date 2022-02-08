@@ -1,5 +1,5 @@
 _base_ = [
-    '../datasets/stoic2021_lung_224x224x192.py',
+    '../datasets/stoic2021_lung_192x192x160.py',
 ]
 # model settings
 conv_cfg = dict(type = 'Conv3d')
@@ -25,6 +25,7 @@ model = dict(
             in_channels = 256,
             num_classes = 1,
             add_feat_dist = False, 
+            age_encoding= dict(),
             # is_multi_task = False, 
             loss=dict(type='CrossEntropyLoss', 
                         use_sigmoid = True, 

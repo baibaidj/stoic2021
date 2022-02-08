@@ -10,3 +10,4 @@ CUDA_VISIBLE_DEVICES=$gpuix python tools/test_med.py configs/stoic2021/${cfg_na}
 
 
 # bash tools/single_test.sh convnext_s32c64_stoic2kcv05_192x192x160_2cls_embed4 4
+# bash tools/single_test.sh convnext_s32c32em4_stoic2kcv05_224x224x192_covid_scratch 4

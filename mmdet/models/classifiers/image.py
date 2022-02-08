@@ -54,11 +54,6 @@ class ImageClassifier(BaseClassifier):
         if self.with_neck:
             x = self.neck(x)
         return x
-
-
-    def aug_gpu_batch(self, data_dict):
-        return self.gpu_pipelines(data_dict)
-
         
     def forward_train(self, img, gt_label, **kwargs):
         """Forward computation during training.

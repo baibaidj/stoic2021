@@ -6,8 +6,7 @@ from ..builder import HEADS
 from .cls_head import ClsHead, Accuracy
 from .neck_gap import GlobalAveragePooling
 from mmcv.utils.parrots_wrapper import _BatchNorm
-import torch.nn.functional as F
-
+from mmdet.models.utils.positional_encoding import SineAgeEncoding
 from ..utils.implicit_semantic_data_aug import ISDALossCls
 import ipdb
 
@@ -22,6 +21,10 @@ class LinearClsHead(ClsHead):
             category.
         in_channels (int): Number of channels in the input feature map.
         loss (dict): Config of classification loss.
+
+        age_encoding = dict(type='SineAgeEncoding', 
+                            num_feats=256, normalize=True, max_age = 6),
+
     """  # noqa: W605
 
     def __init__(self,
@@ -36,6 +39,7 @@ class LinearClsHead(ClsHead):
                  start_iters = 1,
                  max_iters = 4e5,
                  add_feat_dist = False, 
+                 age_encoding=dict(),
                 #  is_multi_task = False, 
                  verb = False
                  ):
@@ -77,6 +81,13 @@ class LinearClsHead(ClsHead):
         self.compute_accuracy = Accuracy(topk=self.topk, thresh=0.5, 
                                         is_multi_task = True)
 
+        if age_encoding:
+            age_encoding.pop('type', None)
+            self.age_encoding  = SineAgeEncoding(**age_encoding)
+        else: 
+            self.age_encoding = None
+
+
     def _init_layers(self):
         if self.add_feat_dist:
             self.fc4cls0 = nn.ModuleList([
@@ -109,19 +120,23 @@ class LinearClsHead(ClsHead):
             normal_init(self.fc, mean=0, std=0.01, bias=0)
 
 
-    def forward_train(self, x, gt_label, train_cfg = None):
+    def forward_train(self, x, gt_label, age_step, train_cfg = None):
         # gt_vector = gt_label.view(gt_label.shape[0], -1).max(-1).values
         gt_vector = gt_label
         ip = x[self.in_index] if isinstance(x, (tuple, list)) else x
 
-        if self.verb: print_tensor(f'[ClsHead] gtcls {gt_label}; input ', ip)
+        # if self.verb: print_tensor(f'[ClsHead] gtcls {gt_label}; input ', ip)
 
         if self.dropout is not None: ip = self.dropout(ip) 
-        ip_dtype = ip.dtype
+
         with torch.cuda.amp.autocast(enabled = False):
             gap_out = self.gap(ip.float()) # b1c > b2c? 
 
-        if self.verb: print_tensor('[ClsHead] post gap', gap_out)
+        if self.age_encoding:
+            age_embed = self.age_encoding(age_step)
+            # ipdb.set_trace()
+            gap_out = gap_out + age_embed
+        # if self.verb: print_tensor('[ClsHead] post gap', gap_out)
         # # feat distance
         # neg_mask = gt_label[:, 0] == 0
         # mild_mask = (gt_label[:, 0] == 1) * (gt_label[:, 1] == 0) # if two category have the same values
@@ -145,7 +160,7 @@ class LinearClsHead(ClsHead):
             # logit_distance = torch.abs(cls_score[:, 0] - cls_score[:, 1])
             # dist_loss = F.smooth_l1_loss(logit_distance, c2c_distance, reduction= 'mean') * 0.3
 
-        if self.verb: print_tensor('[ClsHead] score', cls_score)
+        # if self.verb: print_tensor('[ClsHead] score', cls_score)
 
         if self.is_use_isda:
             ratio = min(self.isda_lambda * self._iter, self._max_iters) / self._max_iters
@@ -159,13 +174,20 @@ class LinearClsHead(ClsHead):
 
         return losses, gap_out
     
-    def simple_test(self, x):
+    def simple_test(self, x, age_step = None):
         """Test without augmentation.
             args: 
                 x: feat_maps, multi-level
         """
         ip = x[self.in_index] if isinstance(x, (tuple, list)) else x
+
+        print_tensor(f'[ClsHead] test input feat {self.in_index}', ip)
         gap_out = self.gap(ip)
+
+        if age_step is not None and self.age_encoding is not None:
+            age_embed = self.age_encoding(age_step)
+            gap_out = gap_out + age_embed
+
         if self.add_feat_dist:
             feat4cls0 = self.fc4cls0[0](gap_out) # bc
             feat4cls1 = self.fc4cls1[0](gap_out) # bc

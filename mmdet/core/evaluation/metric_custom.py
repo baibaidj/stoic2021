@@ -117,7 +117,7 @@ def ClassifierPerformanceBinary(gt_labels, pred_probs, threshold = 0.5,
         'be of the same length as gt_labels.'
 
 
-    pred_catg = pred_probs > threshold
+    pred_catg = np.array(pred_probs > threshold, dtype = np.uint8)
     acc = accuracy_score(gt_labels, pred_catg )
     recall = recall_score(gt_labels, pred_catg)
     specifity = tn(gt_labels, pred_catg)
@@ -127,7 +127,7 @@ def ClassifierPerformanceBinary(gt_labels, pred_probs, threshold = 0.5,
     eval_results = {}
     eval_results[f'{cls_name}_acc'] = acc
     eval_results[f'{cls_name}_recall'] = recall
-    eval_results[f'{cls_name}_ppv'] = specifity
+    eval_results[f'{cls_name}_speci'] = specifity
     eval_results[f'{cls_name}_auc'] = auc
 
     return eval_results

@@ -6,7 +6,7 @@ from .conv_upsample import ConvUpsample
 from .make_divisible import make_divisible
 from .misc import interpolate_as, nan_hook
 from .positional_encoding import (LearnedPositionalEncoding,
-                                  SinePositionalEncoding)
+                                  SinePositionalEncoding, SineAgeEncoding)
 from .res_layer import ResLayer, SimplifiedBasicBlock, ResLayer3D, ResLayerIso
 from .se_layer import SELayer
 from .transformer import (DetrTransformerDecoder, DetrTransformerDecoderLayer,
@@ -33,5 +33,5 @@ __all__ = [
     'nlc_to_nchw', 'pvt_convert', 
 
     'ResLayer3D', 'ResLayerIso', 'PatchEmbed3D', 'nlc_to_nchwd', 'nchwd_to_nlc', 'nan_hook', 
-    'DeformConv3d', 'ModulatedDeformConv3d'
+    'DeformConv3d', 'ModulatedDeformConv3d', 'SineAgeEncoding'
 ]

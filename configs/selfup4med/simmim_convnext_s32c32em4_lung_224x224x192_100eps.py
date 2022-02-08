@@ -36,9 +36,9 @@ fp16 = dict(loss_scale = dict(init_scale=2**10, growth_factor=2.0,
             backoff_factor=0.5, growth_interval=2000, enabled=True)) #30G
 # learning policy
 lr_config = dict(_delete_=True, 
-                policy='poly', power=0.99, 
-                #  policy='CosineAnnealing', min_lr=0.
-                min_lr=1e-5, by_epoch=False,  warmup='linear', warmup_iters=200, 
+                # policy='poly', power=0.99, 
+                 policy='CosineAnnealing', by_epoch=False,  
+                min_lr=1e-6, warmup='linear', warmup_iters=200, 
                  )
 
 runner = dict(type='EpochBasedRunner', max_epochs=32)

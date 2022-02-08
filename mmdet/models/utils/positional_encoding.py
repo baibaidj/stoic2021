@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 from mmcv.cnn.bricks.transformer import POSITIONAL_ENCODING
 from mmcv.runner import BaseModule
+import ipdb
 
 
 @POSITIONAL_ENCODING.register_module()
@@ -160,4 +161,92 @@ class LearnedPositionalEncoding(BaseModule):
         repr_str += f'(num_feats={self.num_feats}, '
         repr_str += f'row_num_embed={self.row_num_embed}, '
         repr_str += f'col_num_embed={self.col_num_embed})'
+        return repr_str
+
+
+
+@POSITIONAL_ENCODING.register_module()
+class SineAgeEncoding(BaseModule):
+    """Position encoding with sine and cosine functions.
+
+    See `End-to-End Object Detection with Transformers
+    <https://arxiv.org/pdf/2005.12872>`_ for details.
+
+    Args:
+        num_feats (int): The feature dimension for each position
+            along x-axis or y-axis. Note the final returned dimension
+            for each position is 2 times of this value.
+        temperature (int, optional): The temperature used for scaling
+            the position embedding. Defaults to 10000.
+        normalize (bool, optional): Whether to normalize the position
+            embedding. Defaults to False.
+        scale (float, optional): A scale factor that scales the position
+            embedding. The scale will be used only when `normalize` is True.
+            Defaults to 2*pi.
+        eps (float, optional): A value added to the denominator for
+            numerical stability. Defaults to 1e-6.
+        offset (float): offset add to embed when do the normalization.
+            Defaults to 0.
+        init_cfg (dict or list[dict], optional): Initialization config dict.
+            Default: None
+    """
+
+    def __init__(self,
+                 num_feats,
+                 temperature=32,
+                 normalize=False,
+                 scale=2 * math.pi,
+                 eps=1e-6,
+                 offset=0.,
+                 max_age=5,
+                 init_cfg=None):
+        super(SineAgeEncoding, self).__init__(init_cfg)
+        if normalize:
+            assert isinstance(scale, (float, int)), 'when normalize is set,' \
+                'scale should be provided and in float or int type, ' \
+                f'found {type(scale)}'
+        self.num_feats = num_feats
+        self.temperature = temperature
+        self.normalize = normalize
+        self.scale = scale
+        self.eps = eps
+        self.offset = offset
+        self.max_age = max_age
+
+    def forward(self, var_nx1):
+        """Forward function for `SinePositionalEncoding`.
+
+        Args:
+            mask (Tensor): ByteTensor mask. Non-zero values representing
+                ignored positions, while zero values means valid positions
+                for this image. Shape [bs, h, w].
+
+        Returns:
+            pos (Tensor): Returned position embedding with shape
+                [bs, num_feats*2, h, w].
+        """
+        # For convenience of exporting to ONNX, it's required to convert
+        # `masks` from bool to int.
+        if self.normalize:
+            var_nx1 = (var_nx1 + self.offset) / (self.max_age + self.eps) * self.scale
+
+        dim_t = torch.arange(
+            self.num_feats, dtype=var_nx1.dtype, device=var_nx1.device)
+
+        dim_t = self.temperature**(2 * (dim_t // 2) / self.num_feats)
+
+        var_nxf = var_nx1[:, None] / dim_t
+        
+        encoding_nxf = torch.cat([var_nxf[:, 0::2].sin(), var_nxf[:, 1::2].cos()], dim = 1)
+
+        return encoding_nxf
+
+    def __repr__(self):
+        """str: a string that describes the module"""
+        repr_str = self.__class__.__name__
+        repr_str += f'(num_feats={self.num_feats}, '
+        repr_str += f'temperature={self.temperature}, '
+        repr_str += f'normalize={self.normalize}, '
+        repr_str += f'scale={self.scale}, '
+        repr_str += f'eps={self.eps})'
         return repr_str

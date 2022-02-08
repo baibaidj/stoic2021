@@ -299,7 +299,8 @@ class RandCropByLabelBBoxRegiond(Randomizable, MapTransform):
             self.centers.append(center_jitter)
 
 
-    def __call__(self, data: Mapping[Hashable, Union[List[np.ndarray], np.ndarray, torch.Tensor]]) -> List[Dict[Hashable, Union[np.ndarray, torch.Tensor]]]:
+    def __call__(self, data: Mapping[Hashable, Union[List[np.ndarray], np.ndarray, torch.Tensor]]
+                ) -> List[Dict[Hashable, Union[np.ndarray, torch.Tensor]]]:
         d = dict(data)
         image = d[self.keys[0]]
         label = d[self.label_key]

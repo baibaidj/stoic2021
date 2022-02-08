@@ -47,7 +47,7 @@ SaveImaged = preg(SaveImaged)
 @PIPELINES.register_module()
 class AddInfo2Meta():
 
-    AGE_MAP = {35: 0, 45: 1, 55: 2, 65: 3, 75: 4, 85: 5}
+    AGE_MAP = {35: 1, 45: 2, 55: 3, 65: 4, 75: 5, 85: 6}
     SEX_MAP = {'F': 0, 'M': 1, 'A': 2, 'O': 2, 'N': 2}
 
     def __init__(self, key = 'img_meta_dict', sub_key = 'filename_or_obj') -> None:
