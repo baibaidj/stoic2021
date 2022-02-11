@@ -7,7 +7,8 @@ from .cls_head import ClsHead, Accuracy
 from .neck_gap import GlobalAveragePooling
 from mmcv.utils.parrots_wrapper import _BatchNorm
 from mmdet.models.utils.positional_encoding import SineAgeEncoding
-from ..utils.implicit_semantic_data_aug import ISDALossCls
+# from ..utils.implicit_semantic_data_aug import ISDALossCls
+import torch.nn.functional as F
 import ipdb
 
 print_tensor = lambda n, x: print(n, type(x), x.dtype, x.shape, x.min(), x.max())
@@ -38,9 +39,9 @@ class LinearClsHead(ClsHead):
                  isda_lambda = 2.5,
                  start_iters = 1,
                  max_iters = 4e5,
+                 logit_dist_ratio = 0, 
                  add_feat_dist = False, 
                  age_encoding=dict(),
-                #  is_multi_task = False, 
                  verb = False
                  ):
         super(LinearClsHead, self).__init__(loss=loss, topk=topk)
@@ -52,7 +53,7 @@ class LinearClsHead(ClsHead):
         self.isda_lambda = isda_lambda
         self._iter = start_iters
         self._max_iters = max_iters
-        self.add_feat_dist = add_feat_dist
+        self.logit_dist_ratio = logit_dist_ratio
         # self.output_gap_feat1d = output_gap_feat1d
         self.use_sigmoid_cls = loss.get('use_sigmoid', False)
         if self.use_sigmoid_cls:
@@ -73,104 +74,106 @@ class LinearClsHead(ClsHead):
             self.dropout = nn.Dropout(self.dropout_ratio) 
         else:
             self.dropout = None
-
-        # TODO build this loss for classification
-        if is_use_isda:
-            self.isda_augmentor = ISDALossCls(self.in_channels, self.cls_out_channels)
         
-        self.compute_accuracy = Accuracy(topk=self.topk, thresh=0.5, 
-                                        is_multi_task = True)
+        self.compute_accuracy = Accuracy(topk=self.topk, 
+                                        thresh=0.5 if self.use_sigmoid_cls else None, 
+                                        use_sigmoid_act = self.use_sigmoid_cls)
 
         if age_encoding:
             age_encoding.pop('type', None)
             self.age_encoding  = SineAgeEncoding(**age_encoding)
+            print('[AgeEncode]', age_encoding)
         else: 
             self.age_encoding = None
 
 
     def _init_layers(self):
-        if self.add_feat_dist:
-            self.fc4cls0 = nn.ModuleList([
-                                nn.Sequential(
-                                    nn.Linear(self.in_channels, self.in_channels//4), 
-                                    nn.LayerNorm(self.in_channels //4), 
-                                    nn.GELU()), 
-                            nn.Linear(self.in_channels//4, 1)])
-            # self
-            self.fc4cls1 = nn.ModuleList([
-                                nn.Sequential(
-                                    nn.Linear(self.in_channels, self.in_channels//4), 
-                                    nn.LayerNorm(self.in_channels //4), 
-                                    nn.GELU()), 
-                            nn.Linear(self.in_channels//4, 1)])
+        # if self.logit_dist_ratio:
+        #     print('[FeatDistance] for two coorelated classes@@')
+        #     self.fc4cls0 = nn.ModuleList([
+        #                         nn.Sequential(
+        #                             nn.Linear(self.in_channels, self.in_channels//4), 
+        #                             nn.LayerNorm(self.in_channels //4), 
+        #                             nn.GELU()), 
+        #                     nn.Linear(self.in_channels//4, 1)])
+        #     # self
+        #     self.fc4cls1 = nn.ModuleList([
+        #                         nn.Sequential(
+        #                             nn.Linear(self.in_channels, self.in_channels//4), 
+        #                             nn.LayerNorm(self.in_channels //4), 
+        #                             nn.GELU()), 
+        #                     nn.Linear(self.in_channels//4, 1)])
         
-        else:
-            self.fc = nn.Linear(self.in_channels, self.cls_out_channels)
+        # else:
+        self.fc = nn.Linear(self.in_channels, self.cls_out_channels)
 
 
     def init_weights(self):
-        if self.add_feat_dist:
-            for m in self.fc4cls0:
-                if isinstance(m, nn.Linear):
-                    normal_init(m, mean=0, std=0.01, bias=0)
-            for m in self.fc4cls1:
-                if isinstance(m, nn.Linear):
-                    normal_init(m, mean=0, std=0.01, bias=0)
-        else:
-            normal_init(self.fc, mean=0, std=0.01, bias=0)
+        # if self.logit_dist_ratio:
+        #     for m in self.fc4cls0:
+        #         if isinstance(m, nn.Linear):
+        #             normal_init(m, mean=0, std=0.01, bias=0)
+        #     for m in self.fc4cls1:
+        #         if isinstance(m, nn.Linear):
+        #             normal_init(m, mean=0, std=0.01, bias=0)
+        # else:
+        normal_init(self.fc, mean=0, std=0.02, bias=0)
 
 
     def forward_train(self, x, gt_label, age_step, train_cfg = None):
+
+        if self.num_classes == 1 and not self.use_sigmoid_cls:
+            gt_label = gt_label[:, 0]
         # gt_vector = gt_label.view(gt_label.shape[0], -1).max(-1).values
-        gt_vector = gt_label
+
         ip = x[self.in_index] if isinstance(x, (tuple, list)) else x
 
-        # if self.verb: print_tensor(f'[ClsHead] gtcls {gt_label}; input ', ip)
+        if self.verb: print_tensor(f'[ClsHead] gtcls {gt_label}; input ', ip)
 
         if self.dropout is not None: ip = self.dropout(ip) 
 
-        with torch.cuda.amp.autocast(enabled = False):
-            gap_out = self.gap(ip.float()) # b1c > b2c? 
+        # with torch.cuda.amp.autocast(enabled = False):
+        gap_out = self.gap(ip.float()) # b1c > b2c? 
 
         if self.age_encoding:
+            # print('Adding age embedding')
             age_embed = self.age_encoding(age_step)
-            # ipdb.set_trace()
+            # print('raw gap', gap_out[0, : 8])
+            # print('age embed', age_embed[0, :8])
             gap_out = gap_out + age_embed
+            # print('raw gap time age', gap_out[0, : 8])
         # if self.verb: print_tensor('[ClsHead] post gap', gap_out)
-        # # feat distance
-        # neg_mask = gt_label[:, 0] == 0
-        # mild_mask = (gt_label[:, 0] == 1) * (gt_label[:, 1] == 0) # if two category have the same values
-        # severe_mask = gt_label[:, 1] == 1
-        # c2c_distance = (neg_mask * 1 + severe_mask * 3 + mild_mask * 6).float()
 
         # ipdb.set_trace()
-        if self.add_feat_dist:
-            feat4cls0 = self.fc4cls0[0](gap_out) # bc
-            feat4cls1 = self.fc4cls1[0](gap_out) # bc
+            # print('Separate feature vectors for each class')
+            # feat4cls0 = self.fc4cls0[0](gap_out) # bc
+            # feat4cls1 = self.fc4cls1[0](gap_out) # bc
 
-            cls_score0 = self.fc4cls0[1](feat4cls0)
-            cls_score1 = self.fc4cls1[1](feat4cls1)
-            cls_score = torch.cat([cls_score0, cls_score1], dim = 1)
+            # cls_score0 = self.fc4cls0[1](feat4cls0)
+            # cls_score1 = self.fc4cls1[1](feat4cls1)
+            # cls_score = torch.cat([cls_score0, cls_score1], dim = 1)
 
             # feat_distance = torch.linalg.norm(feat4cls0 - feat4cls1, 2, dim = 1)
             # dist_loss = F.smooth_l1_loss(feat_distance, c2c_distance, reduction= 'mean') * 0.3
-        else:
-            cls_score = self.fc(gap_out)
-            # logit distance
-            # logit_distance = torch.abs(cls_score[:, 0] - cls_score[:, 1])
-            # dist_loss = F.smooth_l1_loss(logit_distance, c2c_distance, reduction= 'mean') * 0.3
+        # else:
+        cls_score = self.fc(gap_out)
 
-        # if self.verb: print_tensor('[ClsHead] score', cls_score)
-
-        if self.is_use_isda:
-            ratio = min(self.isda_lambda * self._iter, self._max_iters) / self._max_iters
-            cls_score = self.isda_augmentor(x.detach(), self.fc, cls_score, gt_label, ratio)
-            self._iter += 1
+        if self.verb: print_tensor('[ClsHead] score', cls_score)
         # ipdb.set_trace()
-        losses = self.loss(cls_score, gt_vector)
+        losses = self.loss(cls_score, gt_label)
 
-        # losses['loss'] = losses['loss'] + dist_loss 
-        # losses['dist_loss'] = dist_loss
+        if self.logit_dist_ratio:
+            # logit distance
+            neg_mask = gt_label[:, 0] == 0
+            mild_mask = (gt_label[:, 0] == 1) * (gt_label[:, 1] == 0) # if two category have the same values
+            severe_mask = gt_label[:, 1] == 1
+            c2c_distance = (neg_mask * 0 + severe_mask * 0 + mild_mask * 6).float()
+            logit_distance = torch.abs(cls_score[:, 0] - cls_score[:, 1])
+            dist_loss = F.smooth_l1_loss(logit_distance, c2c_distance, 
+                                        reduction= 'mean') * self.logit_dist_ratio
+
+            losses['loss'] = losses['loss'] + dist_loss 
+            losses['dist_loss'] = dist_loss
 
         return losses, gap_out
     
@@ -181,22 +184,22 @@ class LinearClsHead(ClsHead):
         """
         ip = x[self.in_index] if isinstance(x, (tuple, list)) else x
 
-        print_tensor(f'[ClsHead] test input feat {self.in_index}', ip)
+        # print_tensor(f'[ClsHead] test input feat {self.in_index}', ip)
         gap_out = self.gap(ip)
 
         if age_step is not None and self.age_encoding is not None:
             age_embed = self.age_encoding(age_step)
             gap_out = gap_out + age_embed
 
-        if self.add_feat_dist:
-            feat4cls0 = self.fc4cls0[0](gap_out) # bc
-            feat4cls1 = self.fc4cls1[0](gap_out) # bc
+        # if self.logit_dist_ratio:
+        #     feat4cls0 = self.fc4cls0[0](gap_out) # bc
+        #     feat4cls1 = self.fc4cls1[0](gap_out) # bc
 
-            cls_score0 = self.fc4cls0[1](feat4cls0)
-            cls_score1 = self.fc4cls1[1](feat4cls1)
-            cls_score = torch.cat([cls_score0, cls_score1], dim = 1)
-        else:
-            cls_score = self.fc(gap_out)
+        #     cls_score0 = self.fc4cls0[1](feat4cls0)
+        #     cls_score1 = self.fc4cls1[1](feat4cls1)
+        #     cls_score = torch.cat([cls_score0, cls_score1], dim = 1)
+        # else:
+        cls_score = self.fc(gap_out)
         if isinstance(cls_score, list):
             cls_score = sum(cls_score) / float(len(cls_score))
         pred = cls_score

@@ -34,12 +34,20 @@ class CNextBlock3D(BaseModule):
     def __init__(self, dim, expand_ratio = 4, 
                 dropout_layer=dict(type='DropPath', drop_prob=0.), 
                 layer_scale_init_value=1e-6, 
-                dw_kernel_size = 5, 
+                dw_kernel_size = 5, norm_cfg = dict(type = 'LN'), 
                 init_cfg = None):
         super(CNextBlock3D, self).__init__(init_cfg)
+        
+        self.use_ln = norm_cfg['type'] == 'LN'
+
         self.dwconv = nn.Conv3d(dim, dim, kernel_size=dw_kernel_size, 
                                 padding= (dw_kernel_size - 1) // 2 , groups=dim) # depthwise conv
-        self.norm = LayerNorm(dim, eps=1e-6)
+
+        if self.use_ln:
+            self.norm = LayerNorm(dim, eps=1e-6)
+        else:
+            norm_name, self.norm = build_norm_layer(norm_cfg, dim)
+
         self.pwconv1 = nn.Linear(dim, expand_ratio * dim) # pointwise/1x1 convs, implemented with linear layers
         self.act = nn.GELU()
         self.pwconv2 = nn.Linear(expand_ratio * dim, dim)
@@ -53,8 +61,14 @@ class CNextBlock3D(BaseModule):
     def forward(self, x):
         input = x
         x = self.dwconv(x)
-        x = x.permute(0, 2, 3, 4, 1) # (N, C, H, W, D) -> (N, H, W, D, C)
-        x = self.norm(x)
+
+        if self.use_ln:
+            x = x.permute(0, 2, 3, 4, 1) # (N, C, H, W, D) -> (N, H, W, D, C)
+            x = self.norm(x)
+        else:
+            x = self.norm(x)
+            x = x.permute(0, 2, 3, 4, 1) # (N, C, H, W, D) -> (N, H, W, D, C)
+
         x = self.pwconv1(x)
         x = self.act(x)
         x = self.pwconv2(x)
@@ -62,8 +76,11 @@ class CNextBlock3D(BaseModule):
             x = self.gamma * x
         x = x.permute(0, 4, 1, 2, 3) # (N, H, W, D, C) -> (N, C, H, W, D)
 
+
         x = input + self.drop_path(x)
         return x
+
+
 
 @BACKBONES.register_module()
 class ConvNeXt3D(BaseModule):
@@ -95,10 +112,11 @@ class ConvNeXt3D(BaseModule):
                 out_indices=(0, 1, 2, 3, 4),
                 frozen_stages=-1,
                 conv_cfg=None,
-                norm_cfg=dict(type='BN', requires_grad=True),
+                norm_cfg=dict(type='LN', requires_grad=True) , 
                 init_cfg = [dict(type='Kaiming', layer=['Conv3d', 'Linear']),
                             dict(type='Constant', val = 1, layer = 'LayerNorm')
                             ], 
+                verb = False,
                 **kwargs
                 ):
         super(ConvNeXt3D, self).__init__(init_cfg=init_cfg)
@@ -113,8 +131,9 @@ class ConvNeXt3D(BaseModule):
         self.conv_cfg = conv_cfg
         self.norm_cfg = norm_cfg
         self.dw_kernel_size = dw_kernel_size
-
-        self.stem_layer = self._make_stem_layer(in_channels, dims[0], stem_cfg)
+        self.fp16_enabled = False
+        self.verb = verb
+        self.stem_layer = self._make_stem_layer(in_channels, dims[0], stem_cfg, norm_cfg)
 
         self.downsample_layers = nn.ModuleList() # stem and 3 intermediate downsampling conv layers
         # stem = nn.Sequential(
@@ -124,8 +143,8 @@ class ConvNeXt3D(BaseModule):
         # self.downsample_layers.append(stem)
         for i in range(self.num_stages - 1):
             downsample_layer = nn.Sequential(
-                nn.Identity() if i == 0 else LayerNorm(dims[i], eps=1e-6, data_format="channels_first"),
-                nn.Identity() if i == 0 and self.strides[0] == 4 else nn.Conv3d(dims[i], dims[i+1], kernel_size=2, stride=2),
+                nn.Identity() if i == 0 else NormLayer(dims[i], eps=1e-6, data_format="channels_first", norm_cfg=norm_cfg),
+                nn.Identity() if i == 0 else nn.Conv3d(dims[i], dims[i+1], kernel_size=2, stride=2),
             )
             self.downsample_layers.append(downsample_layer)
 
@@ -139,6 +158,7 @@ class ConvNeXt3D(BaseModule):
                             dropout_layer=dict(type='DropPath', drop_prob=dp_rates[cur + j]),  #drop_path=dp_rates[cur + j], 
                             layer_scale_init_value=layer_scale_init_value, 
                             dw_kernel_size = dw_kernel_size, 
+                            norm_cfg= norm_cfg
                 ) for j in range(depths[i+1])]
             )
             self.stages.append(stage)
@@ -148,7 +168,7 @@ class ConvNeXt3D(BaseModule):
         # self.head = nn.Linear(dims[-1], num_classes)
         # self.apply(self._init_weights)
 
-        norm_layer = partial(LayerNorm, eps=1e-6, data_format="channels_first")
+        norm_layer = partial(NormLayer, eps=1e-6, data_format="channels_first", norm_cfg = norm_cfg)
         for i_layer in range(self.num_stages - 1):
             layer = norm_layer(dims[i_layer+1])
             layer_name = f'norm{i_layer}'
@@ -156,7 +176,8 @@ class ConvNeXt3D(BaseModule):
 
     def _make_stem_layer(self, in_channels, stem_channels, 
                     stem_cfg = dict(conv1kernel = 3, conv1stride = 1, conv1_chn_div = 2, 
-                                    conv2kernel = 3, conv2stride = 1)):
+                                    conv2kernel = 3, conv2stride = 1), 
+                    norm_cfg = dict(type='LN', requires_grad=True) ):
         """Make stem layer for ResNet.
         
         i = input size, o = output size, p = padding, k = kernel_size, s = stride, d = dilation
@@ -171,9 +192,9 @@ class ConvNeXt3D(BaseModule):
         conv1kernel = stem_cfg.get('conv1kernel', 3)
         conv1stride = stem_cfg.get('conv1stride', 1)
         conv1pad = (conv1kernel - 1 )//2 #if (conv1kernel % conv1stride != 0) else 0
-        conv2kernel = stem_cfg.get('conv2kernel', 3)
-        conv2stride = stem_cfg.get('conv2stride', 1)
-        conv2pad = (conv2kernel - 1 )//2
+        # conv2kernel = stem_cfg.get('conv2kernel', 3)
+        # conv2stride = stem_cfg.get('conv2stride', 1)
+        # conv2pad = (conv2kernel - 1 )//2
         
         if conv1stride == 4:
             stem_layer = nn.Sequential(
@@ -184,7 +205,8 @@ class ConvNeXt3D(BaseModule):
                 kernel_size=[conv1stride] * 3,
                 stride=[conv1stride] * 3,
                 bias=False),
-            LayerNorm(stem_channels, eps=1e-6, data_format="channels_first")
+            NormLayer(stem_channels, eps=1e-6, 
+                    data_format="channels_first", norm_cfg=norm_cfg)
             )
         else:
             stem_layer = nn.Sequential(
@@ -196,20 +218,21 @@ class ConvNeXt3D(BaseModule):
                     stride=[conv1stride] * 3,
                     padding=[conv1pad] * 3,
                     bias=False),
-                LayerNorm(stem_channels // stem_channel_div, eps=1e-6, data_format="channels_first"), 
+                NormLayer(stem_channels // stem_channel_div, 
+                         eps=1e-6, data_format="channels_first", 
+                         norm_cfg=norm_cfg), 
                 # build_norm_layer(self.norm_cfg, stem_channels)[1], #// 2
-                nn.GELU(),
-                build_conv_layer(
-                    self.conv_cfg,
-                    stem_channels // stem_channel_div,#
-                    stem_channels ,#// 2
-                    kernel_size=[conv2kernel] *3,
-                    stride= [conv2stride] * 3,
-                    padding=[conv2pad] * 3,
-                    bias=False),
-                LayerNorm(stem_channels, eps=1e-6, data_format="channels_first"), 
-                # build_norm_layer(self.norm_cfg, stem_channels)[1],#// 2
-                nn.GELU(),
+                # nn.GELU(),
+                # build_conv_layer(
+                #     self.conv_cfg,
+                #     stem_channels // stem_channel_div,#
+                #     stem_channels ,#// 2
+                #     kernel_size=[conv2kernel] *3,
+                #     stride= [conv2stride] * 3,
+                #     padding=[conv2pad] * 3,
+                #     bias=False),
+                # LayerNorm(stem_channels, eps=1e-6, data_format="channels_first"), 
+                # # build_norm_layer(self.norm_cfg, stem_channels)[1],#// 2
                 )
         return stem_layer
 
@@ -236,7 +259,7 @@ class ConvNeXt3D(BaseModule):
             x = self.stages[i](x)
             norm_layer = getattr(self, f'norm{i}')
             x_out = norm_layer(x)
-            # print_tensor(f'[ConvNext] level i {i}', x_out)
+            if self.verb: print_tensor(f'[ConvNext] level i {i}', x_out)
             outs.append(x_out)
 
         return tuple([outs[i] for i in self.out_indices])
@@ -313,6 +336,24 @@ class LayerNorm(BaseModule):
             x = (x - u) / torch.sqrt(s + self.eps)
             x = self.weight[:, None, None, None] * x + self.bias[:, None, None, None]
             return x
+
+
+class NormLayer(BaseModule):
+
+    def __init__(self, normalized_shape,
+                data_format="channels_last", eps=1e-6, 
+                norm_cfg = dict(type = 'LN'), init_cfg=None):
+        super().__init__(init_cfg)
+
+        self.use_ln = norm_cfg['type'] == 'LN'
+        if self.use_ln:
+            self.norm_layer = LayerNorm(normalized_shape, eps = eps, 
+                                        data_format=data_format)
+        else:
+            name, self.norm_layer = build_norm_layer(norm_cfg, normalized_shape)
+    
+    def forward(self, x):
+        return self.norm_layer(x)
 
 
 model_urls = {

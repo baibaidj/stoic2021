@@ -1,12 +1,12 @@
 import torch
 
-from mmdet.apis import train
-from ..builder import DETECTORS, build_backbone, build_head, build_neck
+from ..builder import DETECTORS
 # from ..utils import BatchMixupLayer
 from .image import ImageClassifier
 from mmdet.datasets.pipelines.compose import Compose
 from mmdet.utils.resize import list_dict2dict_list
 from ..utils import print_tensor
+import ipdb
 
 
 @DETECTORS.register_module()
@@ -14,11 +14,12 @@ class ImageClassifierMed(ImageClassifier):
 
     def __init__(self, *args, 
                  gpu_aug_pipelines = None, 
-                 target_class = None, 
                  **kwargs
                  ):
         super(ImageClassifierMed, self).__init__(*args, **kwargs)
-        self.target_class = target_class
+        # ipdb.set_trace()
+        self.target_class = self.test_cfg.get('target_class', None)
+        self.use_sigmoid = self.head.use_sigmoid_cls
         self.gpu_pipelines = Compose(gpu_aug_pipelines) if gpu_aug_pipelines is not None else None
 
     @torch.no_grad()
@@ -39,6 +40,10 @@ class ImageClassifierMed(ImageClassifier):
             gt_label = gt_label[:, self.target_class : self.target_class + 1]
         ages = torch.tensor([m['img_meta_dict']['age'] for m in img_metas], 
                             dtype = imgs.dtype, device = imgs.device)
+        filenames = [m['img_meta_dict']['filename_or_obj'].split('/')[-1] for m in img_metas]
+        
+        # for i, fn in enumerate(filenames): 
+        #     print(f'{fn} : age {ages[i]} covid+severe {gt_label[i]}')
 
         return data_dict['img'], gt_label, ages
 
@@ -82,7 +87,11 @@ class ImageClassifierMed(ImageClassifier):
                             dtype = img.dtype, device = img.device)
         x = self.extract_feat(img)
         out_cls, gap_feat1d = self.head.simple_test(x, age_step)
-        out_score = out_cls.float().sigmoid().cpu().numpy()
+
+        if self.use_sigmoid:
+            out_score = out_cls.float().sigmoid().cpu().numpy()
+        else:
+            out_score = out_cls.float().softmax(dim=1).cpu().numpy()
         return out_score
 
 

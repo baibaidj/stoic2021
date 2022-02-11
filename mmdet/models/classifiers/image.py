@@ -27,9 +27,9 @@ class ImageClassifier(BaseClassifier):
             self.head = build_head(head)
 
         self.mixup = None
-        if train_cfg is not None:
-            mixup_cfg = train_cfg.get('mixup', None)
-            self.mixup = BatchMixupLayer(**mixup_cfg)
+        # if train_cfg is not None:
+        #     mixup_cfg = train_cfg.get('mixup', None)
+        #     self.mixup = BatchMixupLayer(**mixup_cfg)
 
         self.train_cfg = train_cfg
         self.test_cfg = test_cfg

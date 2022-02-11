@@ -12,8 +12,8 @@ keys = ('img', ) #, seg='instance_seg'
 dtypes = ('float', ) # , 'float', 
 interp_modes = ("bilinear", )  #  , "bilinear", 'nearest'
 core_key_num = 1
-ext_patch_size = (224, 224, 180) # avoid artifacts such as boarder reflection
-patch_size = (192, 192, 160)  # [160 192 112] # xyz
+ext_patch_size = (224, 224, 160) # avoid artifacts such as boarder reflection
+patch_size = (192, 192, 144)  # [160 192 112] # xyz
 train_pipeline = [
     dict(type = 'LoadImaged', keys = keys, reader = 'NibabelReader'),  # img_meta_dict see mmseg.datasets.pipeline.transform_moani
     dict(type = 'AddChanneld', keys= keys), 
@@ -33,8 +33,8 @@ train_pipeline = [
                                 mode='reflect', verbose = False),  
     dict(type = 'CastToTyped_', keys = keys,  dtype=dtypes), 
     dict(type = 'ToTensord', keys = keys),
-    dict(type = 'RandFlipd_', keys = keys, spatial_axis=(0, 1), prob=0.20),
-    dict(type = 'RandFlipd_', keys = keys, spatial_axis=(2, ), prob=0.20), 
+    dict(type = 'RandFlipd_', keys = keys, spatial_axis=(0, 1), prob=0.25),
+    dict(type = 'RandFlipd_', keys = keys, spatial_axis=(2, ), prob=0.25), 
     # dict(type = 'RideOnLabel', keys = {'seg': ('seg', 'skeleton') }, cat_dim = 0),
     # dict(type = 'DataStatsd', keys = keys, prefix = 'Final'), 
     dict(type='FormatShapeMonai', verbose = False, keys = keys[:core_key_num],  channels = in_channel),
@@ -119,6 +119,6 @@ gpu_aug_pipelines = [
                     ),
         dict(type = 'RandGaussianNoised_', keys='img', prob=0.25, std=0.02), 
         # dict(type = 'SaveImaged', keys = keys[:core_key_num], 
-        #     output_dir = f'work_dirs/convnext_s32c64em4_stoic2kcv05_224x224x192_covid/debug', 
+        #     output_dir = f'work_dirs/convnext_s32c32em4_stoic2kcv05_192x192x160_covid_pretrain_lung/debug', 
         #     resample = False, save_batch = True, on_gpu = True),    
         ]

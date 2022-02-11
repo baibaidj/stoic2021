@@ -10,7 +10,7 @@ for rt in conflict_rts:
 
 import mmcv
 import torch
-from mmcv import Config, DictAction
+from mmcv import Config, DictAction, Timer
 from mmcv.cnn import fuse_conv_bn
 from mmcv.parallel import MMDataParallel, MMDistributedDataParallel
 from mmcv.runner import (get_dist_info, init_dist, load_checkpoint,
@@ -21,6 +21,7 @@ from mmdet.datasets import (build_dataloader, build_dataset,
                             replace_ImageToTensor)
 from mmdet.models import build_detector
 import pandas as pd
+from mmdet.utils import setup_multi_processes
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -123,6 +124,8 @@ def main():
         raise ValueError('The output file must be a pkl file.')
 
     cfg = Config.fromfile(args.config)
+    # set multi-process settings
+    setup_multi_processes(cfg)
     if args.cfg_options is not None:
         cfg.merge_from_dict(args.cfg_options)
     # import modules from string list.

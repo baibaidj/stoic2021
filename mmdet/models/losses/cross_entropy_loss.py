@@ -254,8 +254,13 @@ class CrossEntropyLoss(nn.Module):
         if self.verbose: 
             with torch.no_grad():
                 count_loss = self.cls_criterion(cls_score, label, reduction='none')
-                count_pred_nxc = torch.cat([cls_score, torch.sigmoid(cls_score), label, count_loss], axis = 1)
-                # ipdb.set_trace()
-                # fg_counts, weight_counts = target.sum(), weight.sum()
+                if self.use_sigmoid:
+                    count_pred_nxc = torch.cat([cls_score, torch.sigmoid(cls_score), 
+                                                label, count_loss], axis = 1)
+                else:
+                    count_pred_nxc = torch.cat([cls_score, torch.softmax(cls_score, dim = 1), 
+                                                label[:, None], count_loss[:, None]], axis = 1)
+                # fg_counts, weight_counts = target.sum(), weight.sum(z)
             print(f'[CELoss] fg logit gt loss clsw {class_weight} avgf {avg_factor} \n {count_pred_nxc[:8]}')
+            # ipdb.set_trace()
         return loss_cls

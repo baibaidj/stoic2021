@@ -15,7 +15,7 @@ class STOIC21Dataset(CustomDatasetMonai):
     fixed to '_gtFine_labelTrainIds.png' for Cityscapes dataset.
     """
     CLASSES = ('covid', 'severe')
-    AGE_MAP = {35: 0, 45: 1, 55: 2, 65: 3, 75: 4, 85: 5}
+    AGE_MAP = {35: 1, 45: 2, 55: 3, 65: 4, 75: 5, 85: 6}
     SEX_MAP = {'F': 0, 'M': 1, 'A': 2, 'O': 2, 'N': 2}
     
     def __init__(self, *args, cv_fold = 0 , target_class = (0, 1),
@@ -73,11 +73,12 @@ class STOIC21Dataset(CustomDatasetMonai):
             # img_cls = min(int(subdir.split('_')[-1]), self.num_class_cls) - 1 # remove lumps class
             # print('Eval select transform', len(result_dicts))
             # pdb.set_trace()
-            gt_cls_labels.setdefault(subdir, {'gix':i, 
-                                            'pix' :0, 
-                                            'age':age_num, 
-                                            'sex': sex_num, 
-                                            'gt_cls': np.array(target_cls)})
+            if self.target_class is not None: 
+                target_cls = [target_cls[i] for i in self.target_class]
+
+            gt_cls_labels.setdefault(subdir, 
+                        {'gix':i, 'pix' :0, 'age':age_num, 'sex': sex_num, 
+                        'gt_cls': np.array(target_cls)})
 
         self.gt_cls_labels = gt_cls_labels
         return gt_cls_labels
@@ -111,17 +112,22 @@ class STOIC21Dataset(CustomDatasetMonai):
         for ip, (pid, info) in enumerate(gtcls_by_pids.items()):  
             pred_prob = results[info['gix']]
             this_holder = {'pid': pid}
-            pred_catg = pred_prob > 0.5
+            if pred_prob.shape[-1] > len(self.target_class):
+                pred_catg = [np.argmax(pred_prob)]
+                pred_prob = [pred_prob[i + 1] for i in self.target_class]
+            else:
+                pred_catg = pred_prob > 0.5
             gt_catg = info['gt_cls']
+            # ipdb.set_trace()
             for i, prob in enumerate(pred_prob):
                 this_holder[f'cls{i}_gt_catg'] = gt_catg[i]
                 this_holder[f'cls{i}_gt_name'] = self.CLASSES[i] if gt_catg[i] else 'BG'
                 this_holder[f'cls{i}_pred_catg'] = pred_catg[i]
                 this_holder[f'cls{i}_pred_name'] = self.CLASSES[i] if pred_catg[i] else 'BG'
-                this_holder[f'cls{i}_pred_prob'] = float(pred_prob[i])
+                this_holder[f'cls{i}_pred_prob'] = float(prob)
             if ip < 2: 
-                num_pred_cls = pred_prob.shape[-1]
-                print(this_holder)
+                num_pred_cls = len(pred_prob)
+                print('\n', this_holder)
             result_by_pids.append(this_holder)
 
         eval_results = {}

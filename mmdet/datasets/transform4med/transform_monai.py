@@ -68,6 +68,12 @@ class AddInfo2Meta():
         return d
 
     def stoic_class_from_fname(self, abs_path):
+        """
+        covid = case_info['probCOVID']
+        severity = case_info['probSevere']
+        store_file = f'{pid}_age{age}_sex{sex}_covid{covid}_severe{severity}'
+        
+        """
         fname = abs_path.split('/')[-1].split('.')[0]
         pid, age, sex, covid, severe = fname.split('_')
         age = age[3:]

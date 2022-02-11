@@ -1,5 +1,5 @@
 _base_ = [
-    '../datasets/stoic2021_lung_224x224x144.py',
+    '../datasets/stoic2021_lung_192x192x160.py',
 ]
 # model settings
 conv_cfg = dict(type = 'Conv3d')
@@ -11,10 +11,10 @@ model = dict(
         in_channels=1, 
         stem_cfg = dict(conv1stride = 4), 
         expand_ratio = 4, 
-        dw_kernel_size = 7, 
+        dw_kernel_size = 5, 
         num_stages=5,
         depths=[0, 3, 3, 9, 3], 
-        dims=[32, 32, 64, 128, 256],  # 2, 4, 8, 16, 32
+        dims=[32, 32, 64, 128, 256],  # 4, 8, 16, 32
         drop_path_rate=0.2, 
         layer_scale_init_value=1.0, 
         out_indices=(1, 2, 3, 4),
@@ -23,7 +23,7 @@ model = dict(
         ), 
     head=dict(type='LinearClsHead',
             in_channels = 256,
-            num_classes = 1,
+            num_classes = 2,
             add_feat_dist = False, 
             # is_multi_task = False, 
             loss=dict(type='CrossEntropyLoss', 
@@ -35,9 +35,8 @@ model = dict(
             dim = 3, dropout_ratio = 0.1), 
 
     gpu_aug_pipelines = {{ _base_.gpu_aug_pipelines }},
-    target_class = 0, 
-    test_cfg = None,
-    train_cfg = None, 
+    test_cfg = dict(),
+    train_cfg = dict(), 
 )
 
 

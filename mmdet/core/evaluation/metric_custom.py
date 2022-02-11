@@ -5,7 +5,7 @@ from ..utils import print_tensor
 import pdb
 
 from sklearn.metrics import (accuracy_score, roc_auc_score, recall_score, 
-                            confusion_matrix, make_scorer, roc_curve)
+                            confusion_matrix, precision_score)
 
 def tn(y_true, y_pred):
     result = confusion_matrix(y_true, y_pred)
@@ -23,6 +23,7 @@ def fn(y_true, y_pred):
 def tp(y_true, y_pred):
     result = confusion_matrix(y_true, y_pred)
     return result[1, 1] / np.sum(result[1, :])
+
 
 
 def classifier_performance(cls_results, gt_labels):
@@ -119,15 +120,15 @@ def ClassifierPerformanceBinary(gt_labels, pred_probs, threshold = 0.5,
 
     pred_catg = np.array(pred_probs > threshold, dtype = np.uint8)
     acc = accuracy_score(gt_labels, pred_catg )
-    recall = recall_score(gt_labels, pred_catg)
-    specifity = tn(gt_labels, pred_catg)
+    recall = recall_score(gt_labels, pred_catg) # tp/gt
+    precision = precision_score(gt_labels, pred_catg) # tp/(tp+fp)
     auc = roc_auc_score(gt_labels, pred_probs)
-    print(f'\n{model_name} {cls_name} threshold {threshold} acc{acc:.4f} recall{recall:.4f} ppv{specifity:.4f} auc{auc:.4f}')
+    print(f'\n{model_name} {cls_name} threshold {threshold} acc{acc:.4f} recall{recall:.4f} ppv{precision:.4f} auc{auc:.4f}')
 
     eval_results = {}
     eval_results[f'{cls_name}_acc'] = acc
     eval_results[f'{cls_name}_recall'] = recall
-    eval_results[f'{cls_name}_speci'] = specifity
+    eval_results[f'{cls_name}_precis'] = precision
     eval_results[f'{cls_name}_auc'] = auc
 
     return eval_results

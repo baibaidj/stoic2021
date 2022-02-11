@@ -48,14 +48,14 @@ def accuracy(pred, target, topk=1, thresh=None):
         correct = correct & (pred_value > thresh).t()
     res = []
     for k in topk:
-        correct_k = correct[:k].reshape(-1).float().sum(0, keepdim=True)
+        correct_k = correct[:k].reshape(-1).float().sum(0, keepdim=True) 
         res.append(correct_k.mul_(100.0 / pred.size(0)))
     return res[0] if return_single else res
 
 
 class Accuracy(nn.Module):
 
-    def __init__(self, topk=(1, ), thresh=None, is_multi_task = False):
+    def __init__(self, topk=(1, ), thresh=None, use_sigmoid_act = False):
         """Module to calculate the accuracy.
 
         Args:
@@ -67,7 +67,7 @@ class Accuracy(nn.Module):
         super().__init__()
         self.topk = topk
         self.thresh = thresh
-        self.is_multi_task = is_multi_task
+        self.use_sigmoid_act = use_sigmoid_act
 
     def forward(self, pred, target):
         """Forward function to calculate accuracy.
@@ -79,7 +79,7 @@ class Accuracy(nn.Module):
         Returns:
             tuple[float]: The accuracies under different topk criterions.
         """
-        if self.is_multi_task:
+        if self.use_sigmoid_act:
             return accuracy_multi_task(pred, target, self.thresh)
         else:
             return accuracy(pred, target, self.topk, self.thresh)

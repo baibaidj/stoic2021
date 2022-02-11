@@ -1,30 +1,35 @@
 _base_ = [
-    '../datasets/stoic2021_lung_224x224x144.py',
+    '../datasets/stoic2021_lung_192x192x144.py',
 ]
 # model settings
 conv_cfg = dict(type = 'Conv3d')
 norm_cfg = dict(type='IN3d', requires_grad=True) 
+stem_channels = 16
 model = dict(
     type='ImageClassifierMed',
     backbone=dict(
-        type='ConvNeXt3D',
-        in_channels=1, 
-        stem_cfg = dict(conv1stride = 4), 
-        expand_ratio = 4, 
-        dw_kernel_size = 7, 
-        num_stages=5,
-        depths=[0, 3, 3, 9, 3], 
-        dims=[32, 32, 64, 128, 256],  # 2, 4, 8, 16, 32
-        drop_path_rate=0.2, 
-        layer_scale_init_value=1.0, 
-        out_indices=(1, 2, 3, 4),
+        type='ResNet3dIso', # verbose = False, 
+        deep_stem = True,
+        avg_down=True,
+        depth='343d', # 18.3G 
+        in_channels=1,
+        stem_stride_1 = 2,
+        stem_stride_2 = 1, 
+        stem_channels= stem_channels, # 16 
+        base_channels= stem_channels * 2, # 32 
+        num_stages=4,
+        strides=(2, 2, 2, 2), # 32, 64, 128, 256
+        dilations=(1, 1, 1, 1),
+        out_indices=(1, 2, 3, 4, 5), # 2, 4, 8, 16, 32
         conv_cfg=conv_cfg,
-        norm_cfg=norm_cfg, 
-        ), 
+        norm_cfg=norm_cfg,
+        style='pytorch',
+        ),
     head=dict(type='LinearClsHead',
             in_channels = 256,
-            num_classes = 1,
+            num_classes = 2,
             add_feat_dist = False, 
+            age_encoding= dict(),
             # is_multi_task = False, 
             loss=dict(type='CrossEntropyLoss', 
                         use_sigmoid = True, 
@@ -35,9 +40,8 @@ model = dict(
             dim = 3, dropout_ratio = 0.1), 
 
     gpu_aug_pipelines = {{ _base_.gpu_aug_pipelines }},
-    target_class = 0, 
-    test_cfg = None,
-    train_cfg = None, 
+    train_cfg = dict(), 
+    test_cfg = dict(),
 )
 
 

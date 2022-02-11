@@ -12,8 +12,8 @@ keys = ('img', ) #, seg='instance_seg'
 dtypes = ('float', ) # , 'float', 
 interp_modes = ("bilinear", )  #  , "bilinear", 'nearest'
 core_key_num = 1
-ext_patch_size = (240, 240, 240) # avoid artifacts such as boarder reflection
-patch_size = (224, 224, 192)  # [160 192 112] # xyz
+ext_patch_size = (270, 248, 248) # avoid artifacts such as boarder reflection
+patch_size = (256, 224, 224)  # [160 192 112] # xyz
 train_pipeline = [
     dict(type = 'LoadImaged', keys = keys, reader = 'NibabelReader'),  # img_meta_dict see mmseg.datasets.pipeline.transform_moani
     dict(type = 'AddChanneld', keys= keys), 
@@ -27,14 +27,14 @@ train_pipeline = [
                                         percentile_00_5=-900,
                                         return_keys= 'all', #['image', 'label'], 
                                         # data_info_csv = f'{img_dir}/case_info_records_skeleton.csv',
-                                        custom_center_kargs = {'base_value': None, 'jitter': (8, 8, 9)}
+                                        custom_center_kargs = {'base_value': None, 'jitter': (6, 6, 6)}
                                         ),
     dict(type = 'SpatialPadd_', keys=keys, spatial_size= ext_patch_size, # padshape
                                 mode='reflect', verbose = False),  
     dict(type = 'CastToTyped_', keys = keys,  dtype=dtypes), 
     dict(type = 'ToTensord', keys = keys),
-    dict(type = 'RandFlipd_', keys = keys, spatial_axis=(0, 1), prob=0.4),
-    dict(type = 'RandFlipd_', keys = keys, spatial_axis=(2, ), prob=0.4), 
+    dict(type = 'RandFlipd_', keys = keys, spatial_axis=(0, 1), prob=0.20),
+    dict(type = 'RandFlipd_', keys = keys, spatial_axis=(2, ), prob=0.20), 
     # dict(type = 'RideOnLabel', keys = {'seg': ('seg', 'skeleton') }, cat_dim = 0),
     # dict(type = 'DataStatsd', keys = keys, prefix = 'Final'), 
     dict(type='FormatShapeMonai', verbose = False, keys = keys[:core_key_num],  channels = in_channel),
@@ -45,7 +45,7 @@ test_pipeline = [
         dict(type = 'LoadImaged', keys = keys, reader = 'NibabelReader'),
         dict(type='MultiScaleFlipAug3D',
             target_spacings = None, 
-            flip=True,
+            flip=False,
             flip_direction= ['diagonal'],
             transforms=[
                 dict(type = 'AddChanneld', keys= test_keys), 
@@ -104,7 +104,7 @@ gpu_aug_pipelines = [
             sigma_range=(9, 13), # larger sigma mean smoother offset with smaller values
             magnitude_range=(32, 128), # s=8, (-0.008, 0.006) * 256 > (2.04, 1.53)
             spatial_size=patch_size, 
-            rotate_range=[10] * 3, #rotate_angle * np.pi / 180.0
+            rotate_range=[5] * 3, #rotate_angle * np.pi / 180.0
             translate_range = [4] * 3, 
             scale_range=[0.1] * 3,
             prob=1.0,
@@ -119,6 +119,6 @@ gpu_aug_pipelines = [
                     ),
         dict(type = 'RandGaussianNoised_', keys='img', prob=0.25, std=0.02), 
         # dict(type = 'SaveImaged', keys = keys[:core_key_num], 
-        #     output_dir = f'work_dirs/convnext_s32c64em4_stoic2kcv05_224x224x192_covid/debug', 
+        #     output_dir = f'work_dirs/convnext_s16c32k5em4_stoic2kcv05_256x224x224_2cls_lungcen/debug', 
         #     resample = False, save_batch = True, on_gpu = True),    
         ]

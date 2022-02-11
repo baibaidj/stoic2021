@@ -192,6 +192,8 @@ class Bottleneck3d(nn.Module):
             Default: ``dict(type='ReLU')``.
         with_cp (bool): Use checkpoint or not. Using checkpoint will save some
             memory while slowing down the training speed. Default: False.
+
+            
     """
     expansion = 4
 
@@ -204,14 +206,15 @@ class Bottleneck3d(nn.Module):
                  downsample=None,
                  style='pytorch',
                  inflate=True,
-                 inflate_style='3x1x1',
+                 inflate_style='3x3x3',
                  non_local=False,
                  non_local_cfg=dict(),
                  conv_cfg=dict(type='Conv3d'),
                  norm_cfg=dict(type='BN3d'),
                  act_cfg=dict(type='ReLU'),
                  with_cp=False,
-                 stride = None
+                 stride = None, 
+                 **kwargs
                  ):
         super().__init__() 
         assert style in ['pytorch', 'caffe']
