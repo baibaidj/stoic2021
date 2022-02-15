@@ -7,29 +7,30 @@ _base_ = [
 img_dir = 'data/STOIC2021Round1'
 data = dict(samples_per_gpu = 16, workers_per_gpu= 16, 
             train=dict(sample_rate = 1.0, fn2imglist = 'stoic2021_case_info_split.csv', 
-                        img_dir=img_dir, prefix_dir = 'processed', cv_fold = 0), 
+                        img_dir=img_dir, prefix_dir = 'processed', cv_fold = 1), 
             val=dict(sample_rate = 1.0, fn2imglist = 'stoic2021_case_info_split.csv', 
-                        img_dir=img_dir, prefix_dir = 'processed', cv_fold = 0), 
+                        img_dir=img_dir, prefix_dir = 'processed', cv_fold = 1), 
             test= dict(sample_rate = 1.0, fn2imglist = 'stoic2021_case_info_split.csv',
-                        img_dir=img_dir, prefix_dir = 'processed', cv_fold = 0))
+                        img_dir=img_dir, prefix_dir = 'processed', cv_fold = 1))
 
 # pretrain_cp = 'work_dirs/simmim_convnext_s32c32em4_lung_224x224x192_100eps/latest.pth'
 
 model = dict(
-        # backbone = dict(
-        #               init_cfg=dict(type='Pretrained', prefix='backbone.', 
-        #               checkpoint=pretrain_cp, map_location = 'cpu')
-        #             ), 
+        backbone = dict(
+                    #   init_cfg=dict(type='Pretrained', prefix='backbone.', 
+                    #   checkpoint=pretrain_cp, map_location = 'cpu')
+                      frozen_stages=4,
+                    ), 
         head = dict(
                     add_feat_dist = False, 
                     # is_multi_task = False, 
-                    # age_encoding = dict(type='SineAgeEncoding', 
-                    #         temperature=32,
-                    #         num_feats=256, normalize=True, max_age = 6),
+                    age_encoding = dict(type='SineAgeEncoding', 
+                            temperature=64,
+                            num_feats=256, normalize=True, max_age = 6),
                     verb = False,
-                    logit_dist_ratio = 0.4, 
+                    # logit_dist_ratio = 0.2, 
                     loss=dict(type='FocalLossMultitask',
-                        class_weight = (1.0, 1.25), 
+                        class_weight = (1.0, 1.5), 
                         use_sigmoid=True,
                         gamma=2.0,
                         alpha=0.25, 
@@ -39,12 +40,12 @@ model = dict(
     )
 
 find_unused_parameters=True
-load_from = None #'work_dirs/resnset_s32c16em2_stoic2kcv05_256x224x224_2cls_dist/latest.pth'
-resume_from = 'work_dirs/resnset_s32c16em2_stoic2kcv05_256x224x224_2cls_dist/latest.pth' 
+load_from = 'work_dirs/resnset_s32c16em2_stoic2kcv15_256x224x224_2cls/best_auc_epoch_28.pth'
+resume_from = None # 'work_dirs/resnset_s32c16em2_stoic2kcv15_256x224x224_2cls_agecode/latest.pth' 
 
 # optimizer
 optimizer = dict(
-                type='SGD', lr=1e-2, momentum=0.9, weight_decay=1e-3, 
+                type='SGD', lr=5e-3, momentum=0.9, weight_decay=1e-3, 
                 # _delete_ = True, type='AdamW', lr=1e-3, weight_decay=1e-4
         ) 
 optimizer_config = dict(_delete_ = True, grad_clip = dict(max_norm = 32, norm_type = 2)) # 31G
@@ -52,8 +53,8 @@ fp16 = dict(loss_scale = dict(init_scale=2**10, growth_factor=2.0,
             backoff_factor=0.5, growth_interval=2000, enabled=True)) #30G
 # learning policy
 lr_config = dict(_delete_=True, 
-                 policy='poly', power=0.99, min_lr=1e-5, 
-                # policy='CosineAnnealing',  min_lr=1e-6, by_epoch=True, 
+                #  policy='poly', power=0.99, min_lr=1e-5, 
+                policy='CosineAnnealing',  min_lr=1e-6, by_epoch=True, 
                 warmup='linear', warmup_iters=100
                  )
 
@@ -69,6 +70,6 @@ evaluation=dict(interval=2, start=0, metric='auc',
                 save_best = 'auc', rule = 'greater'
                 )
 
-# CUDA_VISIBLE_DEVICES=1 python tools/train.py configs/stoic2021/resnset_s32c16em2_stoic2kcv05_256x224x224_2cls_dist.py 
-# CUDA_VISIBLE_DEVICES=1,5 PORT=29105 bash ./tools/dist_train.sh configs/stoic2021/resnset_s32c16em2_stoic2kcv05_256x224x224_2cls_dist.py 2
+# CUDA_VISIBLE_DEVICES=1 python tools/train.py configs/stoic2021/resnset_s32c16em2_stoic2kcv15_256x224x224_2cls_agecode.py 
+# CUDA_VISIBLE_DEVICES=1,3,5 PORT=28135 bash ./tools/dist_train.sh configs/stoic2021/resnset_s32c16em2_stoic2kcv15_256x224x224_2cls_agecode.py 3
 

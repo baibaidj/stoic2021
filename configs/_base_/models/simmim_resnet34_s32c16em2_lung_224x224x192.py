@@ -1,0 +1,78 @@
+_base_ = [
+    '../datasets/allct_lung_224x224x192.py',
+]
+num_classes = 1 # this is an RPN 
+# model settings
+conv_cfg = dict(type = 'Conv3d')
+norm4head = dict(type='GN', num_groups=16, requires_grad=True) 
+norm_cfg = dict(type='IN3d', requires_grad=True) 
+# bs=2, ng=8, chn=2, m=18.1G;  bs=2, ng=2, m=17.2G;  bs=2, ng=8, chn=1, m=19.3G 
+stem_channels = 16
+stem_stride = 2
+fpn_channel = 64 # > 128 #stem_channels * (2**3)
+model = dict(
+    type='SimMIM',
+    backbone=dict(
+        type='ResNet3dIso4SimMIM', # verbose = False, 
+        deep_stem = True,
+        avg_down=True,
+        depth='343d', # 18.3G 
+        in_channels=1,
+        stem_stride_1 = 2,
+        stem_stride_2 = 1, 
+        stem_channels= stem_channels, # 16 
+        base_channels= stem_channels * 2, # 32 
+        num_stages=4,
+        strides=(2, 2, 2, 2), # 32, 64, 128, 256
+        dilations=(1, 1, 1, 1),
+        out_indices=(0, 1, 2, 3, 4), # 2, 4, 8, 16, 32
+        conv_cfg=conv_cfg,
+        norm_cfg=norm_cfg,
+        style='pytorch',
+        ),
+    neck=dict(
+        type='FPN3D2022',
+        in_channels=[16, 32, 64, 128, 256],  # 
+        fixed_out_channels = fpn_channel,
+        start_level=1, # 
+        conv_cfg = conv_cfg, 
+        norm_cfg = norm_cfg, 
+        kernel_size = 5, 
+        add_extra_convs=False,
+        is_double_chn = False, 
+        num_outs=4, 
+        upsample_cfg=dict(type='deconv3d', mode=None, use_norm = False, 
+                    kernel_size = (2,2,2), stride = (2,2,2), end_level = 1),
+        # verbose = True,
+        ),
+
+    seg_head = dict(
+        type='FCNHead3D', # verbose = True, 
+        in_channels= 64,
+        in_index= 1,
+        channels= 16,
+        # input_transform='resize_concat',
+        kernel_size=1,
+        num_convs=1,
+        concat_input=False,
+        dropout_ratio=0.1,
+        num_classes= 1,
+        conv_cfg = conv_cfg, 
+        norm_cfg=norm4head,
+        align_corners=False,
+        gt_index = 0),
+    gpu_aug_pipelines = {{ _base_.gpu_aug_pipelines }},
+    mask_cfg = dict(input_size={{ _base_.patch_size }}, mask_patch_size=32,
+                                 stem_stride=stem_stride, mask_ratio=0.5), 
+                                 
+    test_cfg=dict(roi_size = {{ _base_.patch_size }}, sw_batch_size = 6,
+        blend_mode = 'constant' , overlap=0.01, sigma_scale = 0.125, # 'gaussian or constant
+        padding_mode='constant' )
+)
+
+
+    # detections_per_img = plan_arch.get("detections_per_img", 100)
+    # score_thresh = plan_arch.get("score_thresh", 0)
+    # topk_candidates = plan_arch.get("topk_candidates", 10000)
+    # remove_small_boxes = plan_arch.get("remove_small_boxes", 0.01)
+    # nms_thresh = plan_arch.get("nms_thresh", 0.6)

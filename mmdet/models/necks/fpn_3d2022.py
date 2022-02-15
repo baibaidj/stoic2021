@@ -6,7 +6,7 @@ from typing import Sequence, List
 from ..builder import NECKS
 from ..utils.ccnet_pure import print_tensor
 from ..utils import nan_hook
-import ipdb
+import ipdb, copy
 # from mmdet.models.backbones.convnext_3d import CNextBlock3D
 
 
@@ -80,8 +80,8 @@ class FPN3D2022(BaseModule):
                  kernel_size = 5, 
                  upsample_cfg=dict(type='deconv3d', mode=None, use_norm = False, 
                                     kernel_size = (2,2,2), stride = (2,2,2), end_level = 0),
-                 init_cfg=dict(
-                     type='Xavier', layer='Conv3d', distribution='uniform'), 
+                 init_cfg=[dict(type='TruncNormal', std = 0.2, layer=['Conv3d', 'ConvTranspose3d']), 
+                           dict(type='Constant', val = 1, layer = ['LayerNorm', 'GN']) ], 
                  is_double_chn = True,     
                 ):
         super(FPN3D2022, self).__init__(init_cfg)
@@ -178,11 +178,11 @@ class FPN3D2022(BaseModule):
         out_channels = [self.fixed_out_channels] * self.num_ins
 
         if self.start_level is not None: #2345
-            ouput_levels = list(range(self.num_ins)) # encoder outputing levels, 01234
+            non_fpn_levels = list(range(self.num_ins)) # encoder outputing levels, 01234
             # filter for levels above decoder levels
-            ouput_levels = [ol for ol in ouput_levels if ol < self.start_level]
+            non_fpn_levels = [ol for ol in non_fpn_levels if ol < self.start_level]
             # assert max(ouput_levels) < self.start_level, "Can not decrease channels below decoder level"
-            for ol in ouput_levels[::-1]: # 1, 0 
+            for ol in non_fpn_levels[::-1]: # 1, 0 
                 oc = max(self.min_out_channels, self.in_channels[ol]* (2 if is_double_chn else 1 ))
                 out_channels[ol] = oc
         return out_channels
@@ -193,28 +193,35 @@ class FPN3D2022(BaseModule):
         """
         up_ops = nn.ModuleList()
         for i in range(0, self.backbone_end_level):
-            if i < self.upsample_end_level:
-                up_ops.append(nn.Identity())
-            else:
-                if self.upsample_mode is not None:
+            if self.upsample_mode is not None:
+                if i < self.upsample_end_level:
                     up = nn.Upsample(scale_factor=2, mode= self.upsample_mode, align_corners=True)
-                    if not (self.out_channels[i] == self.out_channels[i - 1]):
-                        _conv = ConvModule(self.out_channels[i],
-                                            self.out_channels[i - 1], 
-                                            1, conv_cfg=conv_cfg, 
-                                            norm_cfg = norm_cfg, 
-                                            act_cfg=None)
-                        up = nn.Sequential(up, _conv)
                 else:
-                    up = nn.Sequential(build_upsample_layer(
-                                        cfg=self.deconv_cfg,
-                                        in_channels=self.out_channels[i],
-                                        out_channels=self.out_channels[i-1],
-                                        bias = False),
-                                        nn.Identity() if norm_cfg is None else build_norm_layer(norm_cfg, self.out_channels[i-1])[1],
-                                        # nn.ReLU(inplace=True)
-                                        )
+                    up = nn.Identity()
+
+                if not (self.out_channels[i] == self.out_channels[i - 1]):
+                    _conv = ConvModule(self.out_channels[i],
+                                        self.out_channels[i - 1], 
+                                        1, conv_cfg=conv_cfg, 
+                                        norm_cfg = norm_cfg, 
+                                        act_cfg=None)
+                    up = nn.Sequential(up, _conv)
+            else:
+                this_deconv_cfg = copy.deepcopy(self.deconv_cfg)
+                if i < self.upsample_end_level:
+                    this_deconv_cfg['kernel_size']  = 1
+                    this_deconv_cfg['stride']  = 1
+
+                up = nn.Sequential(build_upsample_layer(
+                                    cfg=this_deconv_cfg,
+                                    in_channels=self.out_channels[i],
+                                    out_channels=self.out_channels[i-1],
+                                    bias = False),
+                                    nn.Identity() if norm_cfg is None else build_norm_layer(norm_cfg, self.out_channels[i-1])[1],
+                                    # nn.ReLU(inplace=True)
+                                    )
                 up_ops.append(up)
+            print(f'[UPSample] {i} up', up)
         return up_ops
 
     def forward(self, inputs):
@@ -272,7 +279,6 @@ class FPN3D2022(BaseModule):
                         outs.append(self.fpn_convs[i](F.relu(outs[-1])))
                     else:
                         outs.append(self.fpn_convs[i](outs[-1]))
-        # ipdb.set_trace()
         # bb = [print_tensor(f'[FPNeck] inputlevel {i}', o) for i, o in enumerate(inputs)]
         # level_hasnan = [torch.isnan(a).any() for i, a in enumerate(outs)]
         # if self.verbose: 

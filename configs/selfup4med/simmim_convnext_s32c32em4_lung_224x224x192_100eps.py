@@ -1,6 +1,5 @@
 _base_ = [
     '../_base_/models/simmim_convnext_s32c32em4_lung_224x224x192.py', # s32= stride32
-    # '../_base_/datasets/ribfrac_instance_semantic.py',
     '../_base_/schedules/schedule_2x.py', '../_base_/default_runtime.py'
 ]
 

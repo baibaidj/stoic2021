@@ -5,11 +5,11 @@ import tempfile
 import time
 
 import mmcv
-import torch, pdb
+import torch, ipdb
 import torch.distributed as dist
 from mmcv.image import tensor2imgs
 from mmcv.runner import get_dist_info
-
+import numpy as np
 # from mmdet.core import encode_mask_results
 
 
@@ -26,12 +26,13 @@ def single_gpu_test4med(model,
         with torch.no_grad():
             result = model(return_loss=False, rescale=True, **data)
         # bbox_results, seg_pred
-        if isinstance(result, tuple):
-            batch_size = len(result[0])
-            results.append(result)
-        else:
+        if isinstance(result, (list, np.ndarray)):
             batch_size = len(result)
             results.extend(result)
+        else:
+            batch_size = len(result[0])
+            results.append(result)
+        
         # bbox_results from outer to inner: chunk, mini-batch, class
         if show or out_dir:
             if batch_size == 1 and isinstance(data['img'][0], torch.Tensor):
@@ -65,7 +66,6 @@ def single_gpu_test4med(model,
         # if isinstance(result[0], tuple):
         #     result = [(bbox_results, encode_mask_results(mask_results))
         #               for bbox_results, mask_results in result]
-
         for _ in range(batch_size):
             prog_bar.update()
     return results
@@ -105,10 +105,10 @@ def multi_gpu_test4med(model, data_loader, tmpdir=None, gpu_collect=False):
             #     result = [(bbox_results, encode_mask_results(mask_results))
             #               for bbox_results, mask_results in result]
         # bbox_results, seg_pred
-        if isinstance(result, tuple):
-            results.append(result)
-        else:
+        if isinstance(result, (list, np.ndarray)):
             results.extend(result)
+        else:
+            results.append(result)
 
         if rank == 0:
             # batch_size = len(result)

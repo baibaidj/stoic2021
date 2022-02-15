@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from mmcv.cnn import normal_init, kaiming_init, constant_init
+from mmcv.cnn import normal_init, kaiming_init, constant_init, trunc_normal_init
 
 from ..builder import HEADS
 from .cls_head import ClsHead, Accuracy
@@ -54,6 +54,7 @@ class LinearClsHead(ClsHead):
         self._iter = start_iters
         self._max_iters = max_iters
         self.logit_dist_ratio = logit_dist_ratio
+        self.age_encoding_cfg = age_encoding
         # self.output_gap_feat1d = output_gap_feat1d
         self.use_sigmoid_cls = loss.get('use_sigmoid', False)
         if self.use_sigmoid_cls:
@@ -79,12 +80,6 @@ class LinearClsHead(ClsHead):
                                         thresh=0.5 if self.use_sigmoid_cls else None, 
                                         use_sigmoid_act = self.use_sigmoid_cls)
 
-        if age_encoding:
-            age_encoding.pop('type', None)
-            self.age_encoding  = SineAgeEncoding(**age_encoding)
-            print('[AgeEncode]', age_encoding)
-        else: 
-            self.age_encoding = None
 
 
     def _init_layers(self):
@@ -107,6 +102,15 @@ class LinearClsHead(ClsHead):
         # else:
         self.fc = nn.Linear(self.in_channels, self.cls_out_channels)
 
+        if self.age_encoding_cfg:
+            self.age_encoding_cfg.pop('type', None)
+            self.age_encoding  = SineAgeEncoding(**self.age_encoding_cfg)
+            self.merge_layer = nn.Sequential(nn.Conv1d(self.in_channels, self.in_channels, kernel_size=2), 
+                                             nn.GroupNorm(16, self.in_channels), 
+                                             nn.ReLU(inplace = True))
+            print('[AgeEncode]', self.age_encoding_cfg)
+        else: 
+            self.age_encoding = None            
 
     def init_weights(self):
         # if self.logit_dist_ratio:
@@ -117,7 +121,9 @@ class LinearClsHead(ClsHead):
         #         if isinstance(m, nn.Linear):
         #             normal_init(m, mean=0, std=0.01, bias=0)
         # else:
-        normal_init(self.fc, mean=0, std=0.02, bias=0)
+        normal_init(self.fc, mean=0, std=0.2, bias=0)
+        if self.age_encoding:
+            trunc_normal_init(self.merge_layer[0])
 
 
     def forward_train(self, x, gt_label, age_step, train_cfg = None):
@@ -128,7 +134,7 @@ class LinearClsHead(ClsHead):
 
         ip = x[self.in_index] if isinstance(x, (tuple, list)) else x
 
-        if self.verb: print_tensor(f'[ClsHead] gtcls {gt_label}; input ', ip)
+        if self.verb: print_tensor(f'\n[ClsHead] gtcls {gt_label}; input ', ip)
 
         if self.dropout is not None: ip = self.dropout(ip) 
 
@@ -140,7 +146,10 @@ class LinearClsHead(ClsHead):
             age_embed = self.age_encoding(age_step)
             # print('raw gap', gap_out[0, : 8])
             # print('age embed', age_embed[0, :8])
-            gap_out = gap_out + age_embed
+            feat_merge = torch.stack([gap_out, age_embed], dim = -1) 
+            # gap_out = gap_out + age_embed
+            gap_out = self.merge_layer(feat_merge).squeeze()
+
             # print('raw gap time age', gap_out[0, : 8])
         # if self.verb: print_tensor('[ClsHead] post gap', gap_out)
 
@@ -158,20 +167,25 @@ class LinearClsHead(ClsHead):
         # else:
         cls_score = self.fc(gap_out)
 
-        if self.verb: print_tensor('[ClsHead] score', cls_score)
-        # ipdb.set_trace()
+        if self.verb: 
+            print_tensor('[ClsHead] gap', gap_out)
+            print_tensor('[ClsHead] score', cls_score)
+            for i in range(gap_out.shape[0]): print_tensor(f'[GAP] ix {i}', gap_out[i])
+
         losses = self.loss(cls_score, gt_label)
 
+        # ipdb.set_trace()
         if self.logit_dist_ratio:
             # logit distance
             neg_mask = gt_label[:, 0] == 0
-            mild_mask = (gt_label[:, 0] == 1) * (gt_label[:, 1] == 0) # if two category have the same values
+            mild_mask = (gt_label[:, 0] != gt_label[:, 1]) # if two category have the same values
             severe_mask = gt_label[:, 1] == 1
             c2c_distance = (neg_mask * 0 + severe_mask * 0 + mild_mask * 6).float()
-            logit_distance = torch.abs(cls_score[:, 0] - cls_score[:, 1])
+            logit_distance = cls_score[:, 0] - cls_score[:, 1]
+
             dist_loss = F.smooth_l1_loss(logit_distance, c2c_distance, 
                                         reduction= 'mean') * self.logit_dist_ratio
-
+            # ipdb.set_trace()
             losses['loss'] = losses['loss'] + dist_loss 
             losses['dist_loss'] = dist_loss
 
@@ -189,7 +203,9 @@ class LinearClsHead(ClsHead):
 
         if age_step is not None and self.age_encoding is not None:
             age_embed = self.age_encoding(age_step)
-            gap_out = gap_out + age_embed
+            feat_merge = torch.stack([gap_out, age_embed], dim = -1) 
+            gap_out = self.merge_layer(feat_merge).squeeze()
+            # gap_out = gap_out + age_embed
 
         # if self.logit_dist_ratio:
         #     feat4cls0 = self.fc4cls0[0](gap_out) # bc
@@ -200,13 +216,13 @@ class LinearClsHead(ClsHead):
         #     cls_score = torch.cat([cls_score0, cls_score1], dim = 1)
         # else:
         cls_score = self.fc(gap_out)
-        if isinstance(cls_score, list):
-            cls_score = sum(cls_score) / float(len(cls_score))
-        pred = cls_score
-        if torch.onnx.is_in_onnx_export():
-            return pred
+        # if isinstance(cls_score, list):
+        #     cls_score = sum(cls_score) / float(len(cls_score))
+        # pred = cls_score
+        # if torch.onnx.is_in_onnx_export():
+        #     return pred
         # pred = list(pred.detach().cpu().numpy())
-        return pred, gap_out 
+        return cls_score, gap_out 
 
 
 

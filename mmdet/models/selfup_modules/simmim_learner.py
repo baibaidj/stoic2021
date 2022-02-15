@@ -97,7 +97,7 @@ class SimMIM(BaseLearner3D):
                     ).repeat_interleave(self.stem_stride, 2
                     ).repeat_interleave(self.stem_stride, 3).unsqueeze(1).contiguous()
 
-        loss_recon = F.l1_loss(x, x_rec, reduction='none')
+        loss_recon = F.smooth_l1_loss(x, x_rec, reduction='none')
         loss = (loss_recon * mask).sum() / (mask.sum() + 1e-5) / self.in_chans
         losses = {'loss_rec' : loss}
         return losses

@@ -1,6 +1,5 @@
 _base_ = [
     '../_base_/models_med/simmim_convnext_s32c64_lung_192x192x160.py', # s32= stride32
-    # '../_base_/datasets/ribfrac_instance_semantic.py',
     '../_base_/schedules/schedule_2x.py', '../_base_/default_runtime.py'
 ]
 
@@ -53,6 +52,4 @@ log_config = dict(interval=20, hooks=[
 # CUDA_VISIBLE_DEVICES=0 python tools/train.py configs/selfup4med/simmim_convnext_s32c64_lung_192x192x160_100eps_interp.py --no-validate
 
 # CUDA_VISIBLE_DEVICES=0,2,4 PORT=29024 bash ./tools/dist_train.sh configs/selfup4med/simmim_convnext_s32c64_lung_192x192x160_100eps_interp.py 3 --gpus 3 --no-validate
-# CUDA_VISIBLE_DEVICES=0 python tools/test_med.py \
-# configs/ribfrac/retinanet3d_4l8c_vnet_3x_ribfrac_1cls_syncbn.py \
-# work_dirs/retinanet3d_4l8c_vnet_3x_ribfrac_1cls_syncbn/latest.pth --eval recall  969798
+

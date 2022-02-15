@@ -61,21 +61,22 @@ class CNextBlock3D(BaseModule):
     def forward(self, x):
         input = x
         x = self.dwconv(x)
-
+        # print('\n[feat] dwconv chn0', x[0, 0].mean())
+        # print('[feat] dwconv chn1', x[0, 1].mean())
         if self.use_ln:
             x = x.permute(0, 2, 3, 4, 1) # (N, C, H, W, D) -> (N, H, W, D, C)
             x = self.norm(x)
         else:
             x = self.norm(x)
             x = x.permute(0, 2, 3, 4, 1) # (N, C, H, W, D) -> (N, H, W, D, C)
-
+        # print('[feat] norm chn0 ', x[0, ..., 0].mean())
+        # print('[feat] norm chn1', x[0, ..., 1].mean())
         x = self.pwconv1(x)
         x = self.act(x)
         x = self.pwconv2(x)
         if self.gamma is not None:
             x = self.gamma * x
         x = x.permute(0, 4, 1, 2, 3) # (N, H, W, D, C) -> (N, C, H, W, D)
-
 
         x = input + self.drop_path(x)
         return x
@@ -112,9 +113,9 @@ class ConvNeXt3D(BaseModule):
                 out_indices=(0, 1, 2, 3, 4),
                 frozen_stages=-1,
                 conv_cfg=None,
-                norm_cfg=dict(type='LN', requires_grad=True) , 
-                init_cfg = [dict(type='Kaiming', layer=['Conv3d', 'Linear']),
-                            dict(type='Constant', val = 1, layer = 'LayerNorm')
+                norm_cfg=dict(type='LN', requires_grad=True) ,  
+                init_cfg = [dict(type='TruncNormal', std = 0.2, layer=['Conv3d', 'Linear']), #Xavier
+                            dict(type='Constant', val = 1, layer = ['LayerNorm'])
                             ], 
                 verb = False,
                 **kwargs
@@ -252,7 +253,14 @@ class ConvNeXt3D(BaseModule):
     def forward(self, x):
         # x = self.forward_features(x)
         # x = self.head(x)
+        # for i in range(x.shape[0]): 
+        #     print_tensor(f'[Bone] input ix {i}', x[i])
+
         x = self.stem_layer(x)
+
+        # for i in range(x.shape[0]): 
+        #     print_tensor(f'[Bone] stemfeat ix {i}', x[i])
+
         outs = [x]
         for i in range(self.num_stages - 1 ):
             x = self.downsample_layers[i](x)

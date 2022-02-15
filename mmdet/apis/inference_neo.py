@@ -1,18 +1,25 @@
-import torch, copy
+import torch, copy, ipdb
 
 from mmdet.datasets.builder import PIPELINES
 from mmcv.utils import build_from_cfg
-from mmdet.core import bbox2result3d, batched_nms_3d
-import ipdb
+import numpy as np
 
-def tta_detect_1by1(model, img, affine = None, rescale = True,
-                            need_probs = True, guide_mask = None, target_spacings = [None]):
+def tta_classify_1by1(model, img, affine = None, rescale = True,
+                    guide_mask = None, 
+                    target_spacings = [None], 
+                    flip_directions = [None, 'diagonal'],
+                    age = None):
     """Inference image(s) with the segmentor.
 
     Args:
         model (nn.Module): The loaded segmentor.
         imgs (str/ndarray or list[str/ndarray]): Either image files or loaded
             images.
+            norm_param = {
+                "mean": -86.8, "std": 443.8, "median": 111,
+                "mn": -1133, "mx": 2185,
+                "percentile_99_5": 505,
+                "percentile_00_5": -1024}
 
     Returns:
         result_prob: post softmax/sigmoid before binarization
@@ -24,26 +31,25 @@ def tta_detect_1by1(model, img, affine = None, rescale = True,
     cfg = copy.deepcopy(model.cfg)
     device = next(model.parameters()).device  # model device
     # 0. ToTensor ToGPU add channel
-    data_dict = LoadImageGPU()(dict(img=img, affine = affine, seg = guide_mask), device = device)
+    data_dict = LoadImageGPU()(dict(img=img, affine = affine, seg = guide_mask, age = age), device = device)
     normalizer = build_from_cfg(dict(type='NormalizeIntensityGPUd',
                                     keys='img',
-                                    subtrahend=330,
-                                    divisor=562.5,
-                                    percentile_99_5=3071,
-                                    percentile_00_5=-927), PIPELINES)
+                                    subtrahend=-86.8,
+                                    divisor=443.8,
+                                    percentile_99_5=505,
+                                    percentile_00_5=-1024), PIPELINES)
     # pdb.set_trace()
     # 1. normalize image
     # collect_keymap = {'img' : 'img', 'seg': 'seg', 'img_metas': 'img_meta_dict'}
     data_dict = normalizer(data_dict)
-    det_results_tta = []
-    # NOTE: Try two spacing, rather than two view
+    cls_results_tta = []
     for new_spacing in target_spacings:
-        for flip_direction in [None, ]: #, 'diagonal'
+        for flip_direction in flip_directions: #, 'diagonal'
             # if new_spacing is None and flip_direction is not None:
             #     continue
             print(f'\n[DetTTA] new spacing {new_spacing}  flip {flip_direction}')
-            resizer = ResizeTensor5DGPU(keys = ('img', 'seg'), new_spacing = new_spacing)
-            flipper = FlipTensor5DGPU(keys = ('img', 'seg'), flip_direction = flip_direction)
+            resizer = ResizeTensor5DGPU(keys = ('img', ), new_spacing = new_spacing, verbose = False)
+            flipper = FlipTensor5DGPU(keys = ('img', ), flip_direction = flip_direction)
             # 1. respacing
             data_var = resizer(**data_dict)
             # 2. FlipTTA
@@ -56,30 +62,14 @@ def tta_detect_1by1(model, img, affine = None, rescale = True,
             # forward the model
             with torch.no_grad():
                 # see models/segmentors/base.py 108, forward method
-                det_results, *seg_results = model(return_loss=False, 
-                                                rescale=rescale, 
-                                                need_probs = need_probs, 
-                                                **data_var)
-            det_results_tta.extend(det_results)
-            # del data_var; torch.cuda.empty_cache()
-    # detection
-    bbox_nx7 = torch.cat([d1[0] for d1 in det_results_tta], axis = 0) # nx7
-    label_nx1 = torch.cat([d1[1] for d1 in det_results_tta], axis = 0) # nx1
+                cls_results = model(return_loss=False, 
+                                    rescale=rescale, 
+                                    **data_var)
+            cls_results_tta.append(cls_results)
+    torch.cuda.empty_cache()    
+    cls_final = np.stack(cls_results_tta, axis = 0).mean(axis = 0)
 
-    if bbox_nx7.shape[0] < 1: 
-    # pdb.set_trace()
-        return [[torch.zeros((0, 7)), ] ], None
-        
-    dets_bbox_nx7, keep_idx = batched_nms_3d(bbox_nx7[:, :6], bbox_nx7[:, 6], 
-                                            label_nx1, cfg.model.test_cfg['nms'])
-    label_nx1 = label_nx1[keep_idx]
-    max_per_img, num_classes = cfg.model.test_cfg['max_per_img'], cfg.num_classes
-    if max_per_img > 0:
-        dets_bbox_nx7 = dets_bbox_nx7[: max_per_img]
-        label_nx1 = label_nx1[:max_per_img]
-    # pdb.set_trace()
-    bbox_results = [bbox2result3d(dets_bbox_nx7, label_nx1, num_classes)]
-    return bbox_results, seg_results
+    return cls_final
 
 def masked_image_modeling(model, img, affine = None, rescale = True,
                           guide_mask = None, target_spacing = (1.6, 1.6, 1.6),
@@ -161,6 +151,7 @@ class LoadImageGPU:
                                         affine = results.pop('affine', None),
                                         spatial_shape = results['img'].shape ,
                                         filename_or_obj = results.get('filename', ''), 
+                                        age = results.get('age', None)
                                         # new_pixdim = None, 
                                         # flip = False, 
                                         # flip_direction = 'diagnal'
@@ -225,7 +216,8 @@ class ResizeTensor5DGPU(object):
             d[key] = F.interpolate(d[key], size = new_shape, 
                                     mode=self.mode[idx], 
                                     align_corners=self.align_corners[idx])
-            if self.verbose: print(f'\tRespacing: from {old_shape} {old_spacing} to {new_shape} {self.new_spacing}')
+            if self.verbose: 
+                print(f'\tRespacing: from {old_shape} {old_spacing} to {new_shape} {self.new_spacing}')
             # set the 'affine' key
             # meta_data["affine"] = self.new_spacing #TODO: get it right
             meta_data['shape_post_resize'] = new_shape

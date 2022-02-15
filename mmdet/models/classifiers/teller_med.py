@@ -92,6 +92,7 @@ class ImageClassifierMed(ImageClassifier):
             out_score = out_cls.float().sigmoid().cpu().numpy()
         else:
             out_score = out_cls.float().softmax(dim=1).cpu().numpy()
+        # print_tensor('[SimpleTest]', out_score)
         return out_score
 
 

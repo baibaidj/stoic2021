@@ -16,18 +16,20 @@ data = dict(samples_per_gpu = 16, workers_per_gpu= 16,
 # pretrain_cp = 'work_dirs/simmim_convnext_s32c32em4_lung_224x224x192_100eps/latest.pth'
 
 model = dict(
-        # backbone = dict(
-        #               init_cfg=dict(type='Pretrained', prefix='backbone.', 
-        #               checkpoint=pretrain_cp, map_location = 'cpu')
-        #             ), 
+        backbone = dict(
+                    #   init_cfg=dict(type='Pretrained', prefix='backbone.', 
+                    #   checkpoint=pretrain_cp, map_location = 'cpu')
+                    frozen_stages=4,
+                    ), 
+
         head = dict(
                     add_feat_dist = False, 
                     # is_multi_task = False, 
-                    # age_encoding = dict(type='SineAgeEncoding', 
-                    #         temperature=32,
-                    #         num_feats=256, normalize=True, max_age = 6),
+                    age_encoding = dict(type='SineAgeEncoding', 
+                            temperature=64,
+                            num_feats=256, normalize=True, max_age = 6),
                     verb = False,
-                    logit_dist_ratio = 0.4, 
+                    # logit_dist_ratio = 0.3, 
                     loss=dict(type='FocalLossMultitask',
                         class_weight = (1.0, 1.25), 
                         use_sigmoid=True,
@@ -39,12 +41,12 @@ model = dict(
     )
 
 find_unused_parameters=True
-load_from = None #'work_dirs/resnset_s32c16em2_stoic2kcv05_256x224x224_2cls_dist/latest.pth'
-resume_from = 'work_dirs/resnset_s32c16em2_stoic2kcv05_256x224x224_2cls_dist/latest.pth' 
+load_from = 'work_dirs/resnset_s32c16em2_stoic2kcv05_256x224x224_2cls_agecode/latest.pth'
+resume_from = None # 'work_dirs/resnset_s32c16em2_stoic2kcv05_256x224x224_2cls_agecode/latest.pth' 
 
 # optimizer
 optimizer = dict(
-                type='SGD', lr=1e-2, momentum=0.9, weight_decay=1e-3, 
+                type='SGD', lr=1e-3, momentum=0.9, weight_decay=1e-3, 
                 # _delete_ = True, type='AdamW', lr=1e-3, weight_decay=1e-4
         ) 
 optimizer_config = dict(_delete_ = True, grad_clip = dict(max_norm = 32, norm_type = 2)) # 31G
@@ -69,6 +71,6 @@ evaluation=dict(interval=2, start=0, metric='auc',
                 save_best = 'auc', rule = 'greater'
                 )
 
-# CUDA_VISIBLE_DEVICES=1 python tools/train.py configs/stoic2021/resnset_s32c16em2_stoic2kcv05_256x224x224_2cls_dist.py 
-# CUDA_VISIBLE_DEVICES=1,5 PORT=29105 bash ./tools/dist_train.sh configs/stoic2021/resnset_s32c16em2_stoic2kcv05_256x224x224_2cls_dist.py 2
+# CUDA_VISIBLE_DEVICES=3 python tools/train.py configs/stoic2021/resnset_s32c16em2_stoic2kcv05_256x224x224_2cls_agecode.py 
+# CUDA_VISIBLE_DEVICES=1,3 PORT=29135 bash ./tools/dist_train.sh configs/stoic2021/resnset_s32c16em2_stoic2kcv05_256x224x224_2cls_agecode.py 2
 

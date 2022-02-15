@@ -1,6 +1,6 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 from .swin import SwinTransformer
-from .resnet_3d_iso import ResNet3dIso
+from .resnet_3d_iso import ResNet3dIso, ResNet3dIso4SimMIM
 from .repvgg import RepVGG
 from .pvt_3d import PyramidVisionTransformer3DV2
 from .swin_3d import SwinTransformer3D, SwinTransformer3D4SimMIM
@@ -12,5 +12,5 @@ __all__ = [
     'SwinTransformer', 
     'ResNet3dIso', 'RepVGG', 'PyramidVisionTransformer3DV2', 
     'SwinTransformer3D', 'SwinTransformer3D4SimMIM', 
-    'ConvNeXt3D', 'ConvNeXt3D4SimMIM'
+    'ConvNeXt3D', 'ConvNeXt3D4SimMIM', 'ResNet3dIso4SimMIM'
 ]

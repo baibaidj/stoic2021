@@ -110,6 +110,28 @@ def Dicom2NiiLoop(img_dirs, store_dir, prcs_ix = 99):
     return case_info_list
 
 
+def affine_matrix_sitk(sitk_image, row_first = True):
+    spacing = np.array(sitk_image.GetSpacing(), dtype=np.float32).reshape(1, 3)
+    spacing[0, :2] *= -1
+    origin = np.array(sitk_image.GetOrigin(), dtype=np.float32)
+    direction = np.array(sitk_image.GetDirection())
+    affine_3x3 = direction.reshape(3, 3) * spacing
+    # image_3d = image_3d.transpose(2, 1, 0)
+    affine_mat_raw = np.eye(4, dtype = float )
+    affine_mat_raw[:3,:3] = affine_3x3
+    # for i in range(3): affine_matrix[i, i]  = spacing[i]
+    for i in range(3): affine_mat_raw[i, -1] = origin[i]
+    xyz_dim_index = list(np.argmax(np.abs(affine_mat_raw[:3, :3]), axis= 0 if row_first else 1))
+    affine_matrix = np.copy(affine_mat_raw)
+    for i, d in enumerate(xyz_dim_index):
+        if row_first:
+            affine_matrix[i, i], affine_matrix[d, i] = affine_mat_raw[d, i], affine_mat_raw[i, i]
+        else:
+            affine_matrix[i, i], affine_matrix[i, d] = affine_mat_raw[i, d], affine_mat_raw[i, i]
+    affine_matrix = np.round(affine_matrix, decimals = 6)
+
+    return affine_matrix
+
 if __name__ == '__main__':
 
     set_name = 'train'

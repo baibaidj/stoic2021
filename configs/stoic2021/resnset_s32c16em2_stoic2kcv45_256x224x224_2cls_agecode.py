@@ -7,29 +7,29 @@ _base_ = [
 img_dir = 'data/STOIC2021Round1'
 data = dict(samples_per_gpu = 16, workers_per_gpu= 16, 
             train=dict(sample_rate = 1.0, fn2imglist = 'stoic2021_case_info_split.csv', 
-                        img_dir=img_dir, prefix_dir = 'processed', cv_fold = 0), 
+                        img_dir=img_dir, prefix_dir = 'processed', cv_fold = 4), 
             val=dict(sample_rate = 1.0, fn2imglist = 'stoic2021_case_info_split.csv', 
-                        img_dir=img_dir, prefix_dir = 'processed', cv_fold = 0), 
+                        img_dir=img_dir, prefix_dir = 'processed', cv_fold = 4), 
             test= dict(sample_rate = 1.0, fn2imglist = 'stoic2021_case_info_split.csv',
-                        img_dir=img_dir, prefix_dir = 'processed', cv_fold = 0))
+                        img_dir=img_dir, prefix_dir = 'processed', cv_fold = 4))
 
 # pretrain_cp = 'work_dirs/simmim_convnext_s32c32em4_lung_224x224x192_100eps/latest.pth'
 
 model = dict(
-        # backbone = dict(
+        backbone = dict(frozen_stages=4,
         #               init_cfg=dict(type='Pretrained', prefix='backbone.', 
         #               checkpoint=pretrain_cp, map_location = 'cpu')
-        #             ), 
+                    ), 
         head = dict(
                     add_feat_dist = False, 
                     # is_multi_task = False, 
-                    # age_encoding = dict(type='SineAgeEncoding', 
-                    #         temperature=32,
-                    #         num_feats=256, normalize=True, max_age = 6),
+                    age_encoding = dict(type='SineAgeEncoding', 
+                            temperature=64,
+                            num_feats=256, normalize=True, max_age = 6),
                     verb = False,
-                    logit_dist_ratio = 0.4, 
+                    # logit_dist_ratio = 0.3, 
                     loss=dict(type='FocalLossMultitask',
-                        class_weight = (1.0, 1.25), 
+                        class_weight = (1.0, 1.5), 
                         use_sigmoid=True,
                         gamma=2.0,
                         alpha=0.25, 
@@ -39,8 +39,8 @@ model = dict(
     )
 
 find_unused_parameters=True
-load_from = None #'work_dirs/resnset_s32c16em2_stoic2kcv05_256x224x224_2cls_dist/latest.pth'
-resume_from = 'work_dirs/resnset_s32c16em2_stoic2kcv05_256x224x224_2cls_dist/latest.pth' 
+load_from = None # 'work_dirs/resnset_s32c16em2_stoic2kcv15_256x224x224_2cls/best_auc_epoch_38.pth'
+resume_from = None # 'work_dirs/resnset_s32c16em2_stoic2kcv45_256x224x224_2cls/latest.pth' 
 
 # optimizer
 optimizer = dict(
@@ -57,7 +57,7 @@ lr_config = dict(_delete_=True,
                 warmup='linear', warmup_iters=100
                  )
 
-runner = dict(type='EpochBasedRunner', max_epochs=64)
+runner = dict(type='EpochBasedRunner', max_epochs=100)
 checkpoint_config = dict(interval=1, max_keep_ckpts = 4)
 # yapf:disable
 log_config = dict(interval=2, hooks=[
@@ -69,6 +69,6 @@ evaluation=dict(interval=2, start=0, metric='auc',
                 save_best = 'auc', rule = 'greater'
                 )
 
-# CUDA_VISIBLE_DEVICES=1 python tools/train.py configs/stoic2021/resnset_s32c16em2_stoic2kcv05_256x224x224_2cls_dist.py 
-# CUDA_VISIBLE_DEVICES=1,5 PORT=29105 bash ./tools/dist_train.sh configs/stoic2021/resnset_s32c16em2_stoic2kcv05_256x224x224_2cls_dist.py 2
+# CUDA_VISIBLE_DEVICES=1 python tools/train.py configs/stoic2021/resnset_s32c16em2_stoic2kcv45_256x224x224_2cls.py 
+# CUDA_VISIBLE_DEVICES=1,3,5 PORT=29135 bash ./tools/dist_train.sh configs/stoic2021/resnset_s32c16em2_stoic2kcv45_256x224x224_2cls.py 3
 

@@ -58,16 +58,15 @@ def focal_loss_with_prob_multitask(pred,
     if class_weight is not None:
         loss = loss * class_weight[None, :]
     
-    loss_by_class = loss.mean(dim = 0)
-    loss = loss_by_class.sum()
+    # loss_by_class = loss.mean(dim = 0)
+    # loss = loss_by_class.sum()
 
-    # loss = weight_reduce_loss(loss, weight, reduction, avg_factor)
+    loss = weight_reduce_loss(loss, weight, reduction, avg_factor)
     # print('prob', pred)
     # print('target', target)
     # print('loss_bce\n', loss_bce)
     # print('loss_weight\n', focal_weight)
     # print(f'[SumLoss] by class {loss_by_class} final {loss} ')
-
     # ipdb.set_trace()
     return loss
 
@@ -84,7 +83,7 @@ class FocalLossMultitask(nn.Module):
                  class_weight = None, 
                  loss_weight=1.0, 
                  perform_act=True, 
-                 verbose = False):
+                 verb = False):
         """`Focal Loss <https://arxiv.org/abs/1708.02002>`_
 
         Args:
@@ -112,7 +111,7 @@ class FocalLossMultitask(nn.Module):
         self.loss_weight = loss_weight
         self.perform_act = perform_act
         self.class_weight = class_weight
-        self.verbose = verbose
+        self.verbose = verb
 
     def forward(self,
                 pred,
@@ -162,16 +161,15 @@ class FocalLossMultitask(nn.Module):
 
             if self.verbose: 
                 torch.set_printoptions(precision=2)
-                count_mask = weight>0
-                count_target = target[count_mask]
-                count_pred = pred[count_mask]
+                # count_mask = weight>0
+                count_target = target #[count_mask]
+                count_pred = pred #[count_mask]
                 # pred1hot = torch.cat([torch.ones_like(pred[fg_mask]) , pred[fg_mask] ], axis = 1)
                 fg_loss = calculate_loss_func(count_pred, count_target, reduction='none')
-                fg_pred_nxc = torch.cat([count_pred, torch.sigmoid(count_pred), count_target[:, None], fg_loss], axis = 1)
+                fg_pred_nxc = torch.cat([count_pred, count_target, fg_loss], axis = 1) # torch.sigmoid(count_pred), 
                 # fg_counts, weight_counts = target.sum(), weight.sum()
                 print_tensor('[Focalloss] target cls', target)
                 print(f'[Focalloss] fg logit gt loss \n {fg_pred_nxc[:16]}', fg_pred_nxc.shape)
-                ipdb.set_trace()
                 # counts fg-{fg_counts} weight-{weight_counts},
                 # print_tensor(f'[FocalLoss] pred', pred )
                 # print_tensor(f'[Focalloss] gt', target)

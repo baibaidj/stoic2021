@@ -3,8 +3,8 @@ _base_ = [
 ]
 # model settings
 conv_cfg = dict(type = 'Conv3d')
-norm_cfg = dict(type='IN3d', requires_grad=True)  # IN3D
-# dict(type='GN', num_groups=8, requires_grad=True) 
+#norm_cfg = dict(type='IN3d', requires_grad=True)  # IN3D
+norm_cfg = dict(type='GN', num_groups=16, requires_grad=True) 
 # dict(type='SyncBN', requires_grad=True) 
 model = dict(
     type='ImageClassifierMed',
@@ -15,7 +15,7 @@ model = dict(
         expand_ratio = 4, 
         dw_kernel_size = 7, 
         num_stages=4,
-        depths=[0, 3, 3, 15], 
+        depths=[0, 3, 3, 12], 
         dims=[32, 32, 64, 128],  # 4, 4, 8, 16
         drop_path_rate=0.2, 
         layer_scale_init_value=0.1, 

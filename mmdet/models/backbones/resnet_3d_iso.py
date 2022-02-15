@@ -1,16 +1,14 @@
 import torch.nn as nn
 import torch.utils.checkpoint as cp
-from mmcv.cnn import (build_conv_layer, build_norm_layer, build_plugin_layer,
-                      constant_init, kaiming_init)
-from mmcv.runner import load_checkpoint, BaseModule
+from mmcv.cnn import (build_conv_layer, build_norm_layer, trunc_normal_init)
+from mmcv.runner import BaseModule
 from mmcv.utils.parrots_wrapper import _BatchNorm
 from torch.nn.modules.utils import _ntuple
 
 from ..builder import BACKBONES
 from ..utils import  ResLayerIso
 from .resnet3d import BasicBlock3d, Bottleneck3d
-from ...utils import get_root_logger
-import torch
+import torch, ipdb
 
 print_tensor = lambda n, x: print(n, type(x), x.dtype, x.shape, x.min(), x.max())
 class BasicBlockP3D(nn.Module):
@@ -308,6 +306,7 @@ class ResNet3dIso(BaseModule):
         if depth not in self.arch_settings:
             raise KeyError(f'invalid depth {depth} for resnet')
         self.depth = depth
+        self.in_channels = in_channels
         self.stem_channels = stem_channels
         self.base_channels = base_channels
         # self.kernel_size = kernel_size
@@ -534,38 +533,6 @@ class ResNet3dIso(BaseModule):
             for param in m.parameters():
                 param.requires_grad = False
 
-    # def init_weights(self, pretrained=None):
-    #     """Initialize the weights in backbone.
-
-    #     Args:
-    #         pretrained (str, optional): Path to pre-trained weights.
-    #             Defaults to None.
-    #     """
-    #     if isinstance(pretrained, str):
-    #         logger = get_root_logger()
-    #         load_checkpoint(self, pretrained, strict=False, logger=logger)
-    #     elif pretrained is None:
-    #         for m in self.modules():
-    #             if isinstance(m, nn.Conv3d):
-    #                 kaiming_init(m)
-    #             elif isinstance(m, (_BatchNorm, nn.GroupNorm)):
-    #                 constant_init(m, 1)
-
-    #         if self.dcn is not None:
-    #             for m in self.modules():
-    #                 if isinstance(m, Bottleneck) and hasattr(
-    #                         m, 'conv3_offset'):
-    #                     constant_init(m.conv3_offset, 0)
-
-    #         if self.zero_init_residual:
-    #             for m in self.modules():
-    #                 if isinstance(m, Bottleneck):
-    #                     constant_init(m.norm3, 0)
-    #                 elif isinstance(m, BasicBlock):
-    #                     constant_init(m.norm2, 0)
-    #     else:
-    #         raise TypeError('pretrained must be a str or None')
-
     def forward(self, x):
         """Forward function.
            outs: [input, 1/2, 1/4, 1/8, 1/16, 1/32] 6 items
@@ -586,7 +553,6 @@ class ResNet3dIso(BaseModule):
             x = res_layer(x)
             if self.verbose: print_tensor(f'l{i+2}', x)
             outs.append(x)
-        
         # print('\n')
         # aa = [print(f'[Backbone] level {i} has nan? ', torch.isnan(t).any()) for i, t in enumerate(outs)]
         return tuple([outs[i] for i in self.out_indices])
@@ -601,6 +567,48 @@ class ResNet3dIso(BaseModule):
                 # trick: eval have effect on BatchNorm only
                 if isinstance(m, _BatchNorm):
                     m.eval()
+
+
+@BACKBONES.register_module()
+class ResNet3dIso4SimMIM(ResNet3dIso):
+    def __init__(self, *args, **kwargs):
+        super(ResNet3dIso4SimMIM, self).__init__(*args, **kwargs)
+
+        # assert self.num_classes == 0
+        # self.input_size = input_size
+        # self.output_size = [s//2**5 for i, s in enumerate(input_size)]
+        self.mask_token = nn.Parameter(torch.zeros(1, self.stem_channels))
+
+        trunc_normal_init(self.mask_token, mean=0., std=.02)
+        # self.patch_size = 0
+
+    def forward(self, x, mask):
+        x = self.stem(x)
+        assert mask is not None
+        # B, L, H, W, D = x.shape
+        # not masking the original image, but masking the embedding features !! 
+        # Also, create learnable parameters to weight the masked region 
+        mask_tokens = self.mask_token[..., None, None, None]
+        ww = mask.unsqueeze(1).to(mask_tokens.dtype) # B, L, 1
+        x = x * (1. - ww) + mask_tokens * ww
+        # if self.use_abs_pos_embed:
+        #     x = x + self.absolute_pos_embed
+        # x = self.drop_after_pos(x)
+        outs  = [x]
+        for i, layer_name in enumerate(self.res_layers):
+            res_layer = getattr(self, layer_name)
+            # print(i, res_layer)
+            x = res_layer(x)
+            if self.verbose: print_tensor(f'l{i+2}', x)
+            outs.append(x)
+
+        return tuple([outs[i] for i in self.out_indices])
+
+    @torch.jit.ignore
+    def no_weight_decay(self):
+        return super().no_weight_decay() | {'mask_token'}
+
+
 
 class Pseudo3DConv(nn.Module):
     

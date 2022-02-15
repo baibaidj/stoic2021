@@ -4,7 +4,7 @@ import random
 import warnings
 
 import numpy as np
-import torch
+import torch, ipdb
 import torch.distributed as dist
 from mmcv.parallel import MMDataParallel, MMDistributedDataParallel
 from mmcv.runner import (DistSamplerSeedHook, EpochBasedRunner,
@@ -15,7 +15,6 @@ from mmdet.core import DistEvalHook, EvalHook
 from mmdet.datasets import (build_dataloader, build_dataset,
                             replace_ImageToTensor)
 from mmdet.utils import find_latest_checkpoint, get_root_logger
-
 
 def init_random_seed(seed=None, device='cuda'):
     """Initialize random seed.

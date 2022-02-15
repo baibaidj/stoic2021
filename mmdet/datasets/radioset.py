@@ -112,13 +112,13 @@ class STOIC21Dataset(CustomDatasetMonai):
         for ip, (pid, info) in enumerate(gtcls_by_pids.items()):  
             pred_prob = results[info['gix']]
             this_holder = {'pid': pid}
-            if pred_prob.shape[-1] > len(self.target_class):
+            # ipdb.set_trace()
+            if pred_prob.size > len(self.target_class):
                 pred_catg = [np.argmax(pred_prob)]
                 pred_prob = [pred_prob[i + 1] for i in self.target_class]
             else:
                 pred_catg = pred_prob > 0.5
             gt_catg = info['gt_cls']
-            # ipdb.set_trace()
             for i, prob in enumerate(pred_prob):
                 this_holder[f'cls{i}_gt_catg'] = gt_catg[i]
                 this_holder[f'cls{i}_gt_name'] = self.CLASSES[i] if gt_catg[i] else 'BG'
@@ -169,8 +169,15 @@ class AllCTDataset(CustomDatasetMonai):
     fixed to '_gtFine_labelTrainIds.png' for Cityscapes dataset.
     """
     CLASSES = ('bg', 'fg')
-    def __init__(self, *args, exclude_pids = None, **kwargs):
-        super(AllCTDataset, self).__init__(*args, exclude_pids = exclude_pids, **kwargs)
+    def __init__(self, *args, 
+                cv_fold = 0 , target_class = (0, 1),
+                prefix_dir = 'processed', file_extension = '.nii', 
+                **kwargs):
+        self.cv_fold = cv_fold
+        self.prefix_dir = prefix_dir
+        self.file_extension = file_extension
+        self.target_class = target_class
+        super(AllCTDataset, self).__init__(*args,**kwargs)
 
         self.gt_seg_maps = None
         self.flag = np.ones(len(self), dtype=np.uint8)
@@ -187,17 +194,26 @@ class AllCTDataset(CustomDatasetMonai):
         js_fp = os.path.join(data_folder, self.fn2imglist)
         if not osp.exists(js_fp): return []
         if js_fp.endswith('txt'):
-            image_fps = load_string_list(js_fp)
+            image_fns = load_string_list(js_fp)
         elif js_fp.endswith('csv'):
             case_tb = pd.read_csv(js_fp)
-            image_fps = case_tb['img_path']
+            image_fns = case_tb['img_path']
+
+        # pid2pathpairs = []
+        # for ifp  in image_fns:
+        #     cid = ifp.split(os.sep)[-1].split('.')[0]
+        #     this_pair = {'cid': cid, 'img': ifp}
+        #     pid2pathpairs.append(this_pair)
+        # pathpairs_orderd = sorted(pid2pathpairs, key = lambda x: x['cid'])
+        # print(f'[RawCT] {len(pathpairs_orderd)} samples')
+        # return pathpairs_orderd
 
         pid2pathpairs = []
-        for ifp  in image_fps:
-            cid = ifp.split(os.sep)[-1].split('.')[0]
-            this_pair = {'cid': cid, 'img': ifp}
+        for ifn  in image_fns:
+            cid = ifn.split('_')[0]
+            img_fp = f'{self.img_dir}/{self.prefix_dir}/{ifn}{self.file_extension}'
+            this_pair = {'cid': cid, 'img': img_fp}
             pid2pathpairs.append(this_pair)
         pathpairs_orderd = sorted(pid2pathpairs, key = lambda x: x['cid'])
         print(f'[RawCT] {len(pathpairs_orderd)} samples')
         return pathpairs_orderd
-    
