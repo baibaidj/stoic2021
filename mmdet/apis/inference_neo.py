@@ -31,7 +31,8 @@ def tta_classify_1by1(model, img, affine = None, rescale = True,
     cfg = copy.deepcopy(model.cfg)
     device = next(model.parameters()).device  # model device
     # 0. ToTensor ToGPU add channel
-    data_dict = LoadImageGPU()(dict(img=img, affine = affine, seg = guide_mask, age = age), device = device)
+    data_dict = LoadImageGPU()(dict(img=img, affine = affine, 
+                                seg = guide_mask, age = age), device = device)
     normalizer = build_from_cfg(dict(type='NormalizeIntensityGPUd',
                                     keys='img',
                                     subtrahend=-86.8,
@@ -48,7 +49,7 @@ def tta_classify_1by1(model, img, affine = None, rescale = True,
             # if new_spacing is None and flip_direction is not None:
             #     continue
             print(f'\n[DetTTA] new spacing {new_spacing}  flip {flip_direction}')
-            resizer = ResizeTensor5DGPU(keys = ('img', ), new_spacing = new_spacing, verbose = False)
+            resizer = ResizeTensor5DGPU(keys = ('img', ), new_spacing = new_spacing, verbose = True)
             flipper = FlipTensor5DGPU(keys = ('img', ), flip_direction = flip_direction)
             # 1. respacing
             data_var = resizer(**data_dict)
@@ -65,10 +66,10 @@ def tta_classify_1by1(model, img, affine = None, rescale = True,
                 cls_results = model(return_loss=False, 
                                     rescale=rescale, 
                                     **data_var)
+            
             cls_results_tta.append(cls_results)
     torch.cuda.empty_cache()    
     cls_final = np.stack(cls_results_tta, axis = 0).mean(axis = 0)
-
     return cls_final
 
 def masked_image_modeling(model, img, affine = None, rescale = True,

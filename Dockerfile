@@ -3,6 +3,12 @@
 # or a different PYTORCH (https://hub.docker.com/r/pytorch/pytorch/) base image
 FROM pytorch/pytorch
 
+ARG FIND_LINKS=https://download.openmmlab.com/mmcv/dist/cu110/torch1.7.0/index.html
+RUN cd /lung/MONAI\
+  && pip install mmcv-full==1.4.2 --no-cache-dir -f ${FIND_LINKS}\
+  && pip install --no-cache-dir terminaltables cityscapesscripts
+
+
 RUN apt-get update
 RUN groupadd -r algorithm && useradd -m --no-log-init -r -g algorithm algorithm
 

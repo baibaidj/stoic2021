@@ -1,7 +1,7 @@
 _base_ = [
     '../_base_/models/resnet_s32c16em2_stoic_256x224x224_2cls.py',
-    '../_base_/schedules/schedule_2x.py', '../_base_/default_runtime.py'
-    '../_base_/swa.py',
+    '../_base_/schedules/schedule_2x.py', '../_base_/default_runtime.py',
+    # '../_base_/swa.py',
 ]
 
 img_dir = 'data/STOIC2021Round1'
@@ -31,7 +31,7 @@ model = dict(
                     verb = False,
                     # logit_dist_ratio = 0.3, 
                     loss=dict(type='FocalLossMultitask',
-                        class_weight = (1.0, 1.8), 
+                        class_weight = (1.0, 1.5), 
                         use_sigmoid=True,
                         gamma=2.0,
                         alpha=0.5, 
@@ -41,15 +41,15 @@ model = dict(
     )
 
 find_unused_parameters=True
-load_from = 'work_dirs/resnset_s32c16em2_stoic2kcv05_256x224x224_2cls_agecode/latest.pth'
-resume_from = None # 'work_dirs/resnset_s32c16em2_stoic2kcv05_256x224x224_2cls_agecode/latest.pth' 
+load_from = 'work_dirs/resnset_s32c16em2_stoic2kcv05_256x224x224_2cls_agecode/best_auc_epoch_6.pth'
+resume_from = None # 'work_dirs/resnset_s32c16em2_stoic2kcv05_256x224x224_2cls_agecode_ft/latest.pth' 
 
 # optimizer
 optimizer = dict(
                 type='SGD', lr=1e-3, momentum=0.9, weight_decay=1e-3, 
                 # _delete_ = True, type='AdamW', lr=1e-3, weight_decay=1e-4
                 paramwise_cfg = dict(
-                    custom_keys={'.backbone': dict(lr_mult=0.1, decay_mult=0.9)}
+                    custom_keys={'.backbone': dict(lr_mult=0.25, decay_mult=0.9)}
                     )
         ) 
 optimizer_config = dict(_delete_ = True, grad_clip = dict(max_norm = 32, norm_type = 2)) # 31G
@@ -63,16 +63,53 @@ lr_config = dict(_delete_=True,
                  )
 
 runner = dict(type='EpochBasedRunner', max_epochs=64)
-checkpoint_config = dict(interval=1, max_keep_ckpts = 4)
+checkpoint_config = dict(interval=2, max_keep_ckpts = 10)
 # yapf:disable
 log_config = dict(interval=2, hooks=[
                 dict(type='TextLoggerHook'), 
                 # dict(type='TensorboardLoggerHook')
                 ])
 
-evaluation=dict(interval=2, start=0, metric='auc', 
-                save_best = 'auc', rule = 'greater'
+evaluation=dict(interval=2, start=0, metric='severe_auc', 
+                save_best = 'severe_auc', rule = 'greater'
                 )
 
-# CUDA_VISIBLE_DEVICES=3 python tools/train.py configs/stoic2021/resnset_s32c16em2_stoic2kcv05_256x224x224_2cls_agecode.py 
-# CUDA_VISIBLE_DEVICES=1,3 PORT=29135 bash ./tools/dist_train.sh configs/stoic2021/resnset_s32c16em2_stoic2kcv05_256x224x224_2cls_agecode.py 2
+# CUDA_VISIBLE_DEVICES=3 python tools/train.py configs/stoic2021/resnset_s32c16em2_stoic2kcv05_256x224x224_2cls_agecode_ft.py 
+# CUDA_VISIBLE_DEVICES=0,3 PORT=29003 bash ./tools/dist_train.sh configs/stoic2021/resnset_s32c16em2_stoic2kcv05_256x224x224_2cls_agecode_ft.py 2
+
+# swa_training = True
+# swa_load_from = 'work_dirs/resnset_s32c16em2_stoic2kcv05_256x224x224_2cls_agecode/latest.pth'
+# swa_resume_from = None
+
+
+# # swa optimizer
+# swa_optimizer = dict(type='SGD', lr=0.008, momentum=0.9, weight_decay=0.0001, 
+#                 # _delete_ = True, type='AdamW', lr=0.0001, weight_decay=0.0001, 
+#                 paramwise_cfg = dict(
+#                     custom_keys={'.backbone': dict(lr_mult=0.1, decay_mult=0.9)}
+#                     )
+#         ) 
+# # swa learning policy
+# swa_lr_config = dict(
+#     policy='cyclic',
+#     target_ratio=(1, 0.01),
+#     cyclic_times=12, #24
+#     step_ratio_up=0.0)
+# swa_runner = dict(type='EpochBasedRunner', max_epochs=24)  
+# swa_interval = 2
+
+# # swa_optimizer_config
+# swa_optimizer_config = dict(_delete_ = True, grad_clip = dict(max_norm = 8, norm_type = 2)) # 31G
+# fp16 = dict(loss_scale = dict(init_scale=2**10, growth_factor=2.0, 
+#             backoff_factor=0.5, growth_interval=2000, enabled=True)) #30G
+
+# # yapf:disable
+# log_config = dict(interval=10, hooks=[
+#                 dict(type='TextLoggerHook'), 
+#                 # dict(type='TensorboardLoggerHook')
+#                 ])
+
+# swa_checkpoint_config = dict(interval=4, filename_tmpl='swa_epoch_{}.pth', max_keep_ckpts = 10)
+# evaluation=dict(interval=2, start=0, metric='severe_auc', 
+#                 save_best = 'severe_auc', rule = 'greater'
+#                 )

@@ -99,7 +99,7 @@ class STOIC21Dataset(CustomDatasetMonai):
         if not isinstance(metric, str):
             assert len(metric) == 1
             metric = metric[0]
-        allowed_metrics = ['auc', 'recall', 'ppv', 'acc']
+        allowed_metrics = ['auc', 'recall', 'ppv', 'acc', 'severe_auc', 'covid_auc']
         if metric not in allowed_metrics:
             raise KeyError('metric {} is not supported'.format(metric))
 
@@ -139,7 +139,7 @@ class STOIC21Dataset(CustomDatasetMonai):
             eval_results_i = ClassifierPerformanceBinary(gt_labels, cls_results, cls_name = cls_name)
             eval_results.update(eval_results_i)
 
-        eval_results[metric] =  np.mean([eval_results[f'{self.CLASSES[cls_i]}_{metric}'] for 
+        eval_results['mean_auc'] =  np.mean([eval_results[f'{self.CLASSES[cls_i]}_auc'] for 
                                         cls_i in range(num_pred_cls)])
         if return_casewise: 
             return eval_results, result_by_pids

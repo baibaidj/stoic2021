@@ -145,7 +145,6 @@ def infer_loop(cfg,
         this_holder = {'pid': pid, 'infer_time_avg': '', 
                 'age':age_num, 'sex': sex_num, 
                 'gt_cls': np.array(target_cls)}    
-
         if is_test: continue 
 
         sitk_image = sitk.ReadImage(img_nii_fp)
@@ -196,8 +195,10 @@ class CovidSeverePredictor:
         self.model_dir = model_dir
         self.model_name = model_name
         self.cfg = cfg
-        self.extend3axis_mm = (16, 12, 8)
-        self.target_spacings = [(0.9, 0.9, 0.9), (1.0, 1.0, 1.0), (1.1, 1.1, 1.1)]
+        self.extend3axis_mm = (12, 12, 6)
+        self.target_spacings = None # [(1.0, 1.0, 1.0), (1.1, 1.1, 1.1)]
+        self.target_shapes = [(288, 256, 256), (260, 230, 230)]
+        self.flip_directions = [None, 'diagonal', 'headfeet']
         
         if not model_name.endswith('nan'):
             self.cls_model = self._create_cls_model(model_dir, model_name, best_weight)  # create model
@@ -222,7 +223,7 @@ class CovidSeverePredictor:
         img_3d_origin = sitk.GetArrayFromImage(img_sitk) #.transpose(2, 1, 0)
         # with Timer(print_tmpl='\tInferLung {:.3f} seconds'): 
 
-        with suppress_stdout():
+        with torch.cuda.amp.autocast(enabled= True):
             lung_3d_origin = LungMask.apply(img_sitk, batch_size=32, 
                                             model = self.lung_segmentor,) #.transpose(2, 1, 0) # xyz
 
@@ -237,7 +238,7 @@ class CovidSeverePredictor:
         mask_3d_lung = lung_3d_origin[lung_slicer]
 
         lung_lengths = [max(lung_coords[a]) - min(lung_coords[a]) for a in range(3)]
-        print(f'\t lung length {lung_lengths} Lung shape extend z{extend3axis_pixel}', img_3d_lung.shape)
+        # print(f'\t lung length {lung_lengths} Lung shape extend z{extend3axis_pixel}', img_3d_lung.shape)
         covid_severe_prob = self.inference(img_3d_lung, affine_matrix, 
                                             lung_mask = mask_3d_lung, age = age)
         return covid_severe_prob
@@ -245,16 +246,26 @@ class CovidSeverePredictor:
     def inference(self, image_3d, affine_matrix, lung_mask = None, age = None):
 
         raw_arr_xyz = image_3d.transpose(2, 1, 0)
+        oldshape = raw_arr_xyz.shape
+        oldspacing = [abs(affine_matrix[i, i]) for i in range(3)]
         # model_rt = Path(self.cls_model_path).parent
         # IO4Nii.write(raw_arr_xyz, model_rt, 'test_shape_order',
         #              self.imageset.affine_matrix, axis_order=None)
        
         # seg_prob_whole = np.zeros_like(raw_arr_xyz, dtype=np.float32)
         # seg_count_whole = np.zeros_like(raw_arr_xyz, dtype=np.uint8)
+        shape2spacing = lambda oldshape, oldspacing, newshape: [
+            oldshape[i] * oldspacing[i] / news for i, news in enumerate(newshape)]
+        
+        if self.target_spacings is None:
+            target_spacings = [shape2spacing(oldshape, oldspacing, newshape) 
+                                for newshape in self.target_shapes]
+        else:
+            target_spacings = self.target_spacings
 
         prob_1x2 = tta_classify_1by1(self.cls_model, raw_arr_xyz, affine = affine_matrix, 
-                                        target_spacings = self.target_spacings, 
-                                        flip_directions=[None, 'diagonal'], 
+                                        target_spacings = target_spacings, 
+                                        flip_directions = self.flip_directions, 
                                         age = age)
         # seg_prob_chns = seg_prob_chns.float().numpy()
         # seg_results.append(seg_prob_chns)

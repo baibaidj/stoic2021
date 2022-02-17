@@ -13,7 +13,7 @@ dtypes = ('float', ) # , 'float',
 interp_modes = ("bilinear", )  #  , "bilinear", 'nearest'
 core_key_num = 1
 ext_patch_size = (270, 248, 248) # avoid artifacts such as boarder reflection
-patch_size = (256, 224, 224)  # [160 192 112] # xyz
+patch_size = (256, 224, 224)  #
 train_pipeline = [
     dict(type = 'LoadImaged', keys = keys, reader = 'NibabelReader'),  # img_meta_dict see mmseg.datasets.pipeline.transform_moani
     dict(type = 'AddChanneld', keys= keys), 
@@ -33,8 +33,8 @@ train_pipeline = [
                                 mode='reflect', verbose = False),  
     dict(type = 'CastToTyped_', keys = keys,  dtype=dtypes), 
     dict(type = 'ToTensord', keys = keys),
-    dict(type = 'RandFlipd_', keys = keys, spatial_axis=(0, 1), prob=0.20),
-    dict(type = 'RandFlipd_', keys = keys, spatial_axis=(2, ), prob=0.20), 
+    dict(type = 'RandFlipd_', keys = keys, spatial_axis=(0, 1), prob=0.40),
+    dict(type = 'RandFlipd_', keys = keys, spatial_axis=(2, ), prob=0.40), 
     # dict(type = 'RideOnLabel', keys = {'seg': ('seg', 'skeleton') }, cat_dim = 0),
     # dict(type = 'DataStatsd', keys = keys, prefix = 'Final'), 
     dict(type='FormatShapeMonai', verbose = False, keys = keys[:core_key_num],  channels = in_channel),
