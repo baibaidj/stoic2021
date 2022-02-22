@@ -56,6 +56,11 @@ class StoicAlgorithmDJ(MultiClassAlgorithm):
 
     AGE_MAP = {35: 1, 45: 2, 55: 3, 65: 4, 75: 5, 85: 6}
     SEX_MAP = {'F': 0, 'M': 1, 'A': 2, 'O': 2, 'N': 2}
+
+    model_dir = './work_dirs'
+    model_name = 'resnset_s32c16em2_stoic2kcv05_256x224x224_2cls_agecode'
+    best_weight = 'best_auc_epoch_6.pth'
+    output_path = Path('/mnt/data2/whos/stoic2021/pred_dir')/model_name
     def __init__(self):
         super().__init__(
             validators=dict(
@@ -64,18 +69,18 @@ class StoicAlgorithmDJ(MultiClassAlgorithm):
                     UniquePathIndicesValidator(),
                 )
             ),
-            input_path=Path("/input/images/ct/"),
-            output_path=Path("/output/")
+            # input_path=Path("/input/images/ct/"),
+            # output_path=Path("/output/"), 
+            input_path = Path("/mnt/3efe7c24-877b-427a-b1a5-4a26ebca9208/STOIC2021"), 
+            output_path = self.output_path
         )
         
         # load model
         # git_rt, cfg.model_name, cfg.best_weight, device = f'cuda:{cfg.gpu_ix}'
-        model_dir = './work_dirs'
-        model_name = 'resnset_s32c16em2_stoic2kcv05_256x224x224_2cls_agecode'
-        best_weight = 'best_auc_epoch_6.pth'
-        self.classifier = CovidSeverePredictor(model_dir = model_dir, 
-                                            model_name = model_name, 
-                                            best_weight= best_weight, 
+
+        self.classifier = CovidSeverePredictor(model_dir = self.model_dir, 
+                                            model_name = self.model_name, 
+                                            best_weight= self.best_weight, 
                                             device = 'cuda:0')
 
 

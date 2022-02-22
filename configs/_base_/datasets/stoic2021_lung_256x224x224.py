@@ -105,7 +105,7 @@ gpu_aug_pipelines = [
             sigma_range=(9, 13), # larger sigma mean smoother offset with smaller values
             magnitude_range=(32, 128), # s=8, (-0.008, 0.006) * 256 > (2.04, 1.53)
             spatial_size=patch_size, 
-            rotate_range=[5] * 3, #rotate_angle * np.pi / 180.0
+            rotate_range=[9] * 3, #rotate_angle * np.pi / 180.0
             translate_range = [4] * 3, 
             scale_range=[0.1] * 3,
             prob=1.0,

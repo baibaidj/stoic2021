@@ -120,6 +120,7 @@ class FPN3D2022(BaseModule):
         
         self.out_channels = self.compute_output_channels(is_double_chn)
         self.up_ops = self.build_upsample_layers(conv_cfg, norm_cfg = norm_cfg if self.upsample_use_norm else None)
+        # ipdb.set_trace()
         print(f'[FPN3D] input channels {self.in_channels} out channels {self.out_channels} upmode {self.up_ops[-1]}')
         self.lateral_convs = nn.ModuleList()
         self.fpn_convs = nn.ModuleList()
@@ -195,10 +196,10 @@ class FPN3D2022(BaseModule):
         for i in range(0, self.backbone_end_level):
             if self.upsample_mode is not None:
                 if i < self.upsample_end_level:
-                    up = nn.Upsample(scale_factor=2, mode= self.upsample_mode, align_corners=True)
-                else:
                     up = nn.Identity()
-
+                else:
+                    up = nn.Upsample(scale_factor=2, mode= self.upsample_mode, align_corners=True)
+                    
                 if not (self.out_channels[i] == self.out_channels[i - 1]):
                     _conv = ConvModule(self.out_channels[i],
                                         self.out_channels[i - 1], 
@@ -220,7 +221,7 @@ class FPN3D2022(BaseModule):
                                     nn.Identity() if norm_cfg is None else build_norm_layer(norm_cfg, self.out_channels[i-1])[1],
                                     # nn.ReLU(inplace=True)
                                     )
-                up_ops.append(up)
+            up_ops.append(up)
             print(f'[UPSample] {i} up', up)
         return up_ops
 
