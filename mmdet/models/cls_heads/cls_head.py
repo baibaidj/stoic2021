@@ -3,12 +3,11 @@ import torch.nn.functional as F
 
 from mmdet.models.losses import Accuracy
 from ..builder import HEADS, build_loss
-from .base_head import BaseHead
-from mmcv.runner import force_fp32
+from mmcv.runner import force_fp32, BaseModule
 import ipdb
 
 @HEADS.register_module()
-class ClsHead(BaseHead):
+class ClsHead(BaseModule):
     """classification head.
 
     Args:
@@ -18,8 +17,9 @@ class ClsHead(BaseHead):
 
     def __init__(self,
                  loss=dict(type='CrossEntropyLoss', loss_weight=1.0),
-                 topk=(1, )):
-        super(ClsHead, self).__init__()
+                 topk=(1, ),
+                 init_cfg = dict(type='TruncNormal', std = 0.2, layer='Linear')):
+        super(ClsHead, self).__init__(init_cfg = init_cfg)
 
         assert isinstance(loss, dict)
         assert isinstance(topk, (int, tuple))

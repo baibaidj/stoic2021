@@ -6,16 +6,16 @@ numfold=$2
 work_dirs=work_dirs 
 data_rt=data/STOIC2021Round1
 prefix_dir=processed
-split=test
+split=train
 
 # model_name=resnset_s32c16em2_stoic2kcv05_256x224x224_2cls_agecode
 # best_weight=best_auc_epoch_6
 
-cvfold=1
-model_name=resnset_s32c16em2_stoic2kcv15_256x224x224_2cls_agecode_ecloss
-best_weight=latest
+cvfold=4
+# model_name=resnset_s32c16em2_stoic2kcv15_256x224x224_2cls_agecode_ft
+# best_weight=latest
 
-# model_name=resnset_s32c16em2_stoic2kcv${cvfold}5_256x224x224_2cls_agecode_ft
+model_name=resnset_s32c16em2_stoic2kcv${cvfold}5_256x224x224_2cls_agecode_ft
 # best_weight=best_severe_auc_epoch_2
 
 # model_name=resnset_s32c16em2_stoic2kcv15_256x224x224_2cls_agecode_ft
@@ -28,7 +28,7 @@ best_weight=latest
 # best_weight=best_severe_auc_epoch_26
 
 # model_name=resnset_s32c16em2_stoic2kcv45_256x224x224_2cls_agecode_ft
-# best_weight=best_severe_auc_epoch_6
+best_weight=best_severe_auc_epoch_6
 
 # python tools/model_converters/publish_model.py ${work_dirs}/$model_name/${best_weight}.pth \
 #     $work_dirs/$model_name/best_weight_cv${cvfold}5.pth
@@ -58,4 +58,4 @@ wait
 #     --data-rt $data_rt --prefix-dir $prefix_dir --split $split --cv-fold ${cvfold} \
 #     --gpu-ix 0 --fold-ix $foldix --num-fold $numfold --verbose
 
-# bash scripts/infer_stoic.sh 4 6
+# bash scripts/infer_stoic.sh 3 6

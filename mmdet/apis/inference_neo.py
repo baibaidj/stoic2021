@@ -8,7 +8,7 @@ def tta_classify_1by1(model, img, affine = None, rescale = True,
                     guide_mask = None, 
                     target_spacings = [None], 
                     flip_directions = [None, 'diagonal'],
-                    age = None):
+                    age = None, verb = False):
     """Inference image(s) with the segmentor.
 
     Args:
@@ -48,8 +48,8 @@ def tta_classify_1by1(model, img, affine = None, rescale = True,
         for flip_direction in flip_directions: #, 'diagonal'
             # if new_spacing is None and flip_direction is not None:
             #     continue
-            print(f'\n[DetTTA] new spacing {new_spacing}  flip {flip_direction}')
-            resizer = ResizeTensor5DGPU(keys = ('img', ), new_spacing = new_spacing, verbose = True)
+            if verb: print(f'\n[DetTTA] new spacing {new_spacing}  flip {flip_direction}')
+            resizer = ResizeTensor5DGPU(keys = ('img', ), new_spacing = new_spacing, verbose = False)
             flipper = FlipTensor5DGPU(keys = ('img', ), flip_direction = flip_direction)
             # 1. respacing
             data_var = resizer(**data_dict)

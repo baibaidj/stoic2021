@@ -8,7 +8,6 @@ from mmdet.apis.inference_neo import *
 from mmdet.datasets.transform4med.io4med import *
 from mmdet.datasets.custom_seg import ClassifierPerformanceBinary
 from mmdet.datasets.transform4med.load_dicom import affine_matrix_sitk
-
 from lungmask import mask as LungMask
 
 # CLASSES = ('bg', 'hv', 'pv')
@@ -128,7 +127,9 @@ def infer_loop(cfg,
     git_rt = Path(cfg.repo_rt)
     # model_name = 'fcn_hr18_449x449_40k_pancreas_neg100_dl'; process_func = process_1_case_2d
     class_predictor = CovidSeverePredictor(git_rt, cfg.model_name, 
-                                            cfg.best_weight, device = f'cuda:{cfg.gpu_ix}')
+                                            [cfg.best_weight], device = f'cuda:{cfg.gpu_ix}')
+    
+    lung_segmentor = LungMask.get_model('unet', 'R231', modelpath='./algorithm/seg_weight/unet_r231-d5d2fc3d.pth')
     # sys.exit('debug')
     result_by_pids = []
 
@@ -148,10 +149,12 @@ def infer_loop(cfg,
         if is_test: continue 
 
         sitk_image = sitk.ReadImage(img_nii_fp)
-        cls_prob_1x2 = class_predictor(sitk_image, age = age_num)
+        with torch.cuda.amp.autocast(enabled= True):
+            lung_mask_zyx = LungMask.apply(sitk_image, batch_size=32, model = lung_segmentor) 
+
+        cls_prob_1x2 = class_predictor(sitk_image, lung_mask_zyx=lung_mask_zyx)
         pred_catg = cls_prob_1x2 > 0.5
         print_tensor(f'\t cls prob', cls_prob_1x2)
-
         for i, prob in enumerate(cls_prob_1x2):
             this_holder[f'cls{i}_gt_catg'] = target_cls[i]
             this_holder[f'cls{i}_gt_name'] = CLASSES[i] if target_cls[i] else 'BG'
@@ -190,70 +193,94 @@ def infer_loop(cfg,
 
 
 class CovidSeverePredictor:
-    def __init__(self, model_dir, model_name, best_weight, device = 'cuda:0', cfg = None):
+    AGE_MAP = {35: 1, 45: 2, 55: 3, 65: 4, 75: 5, 85: 6}
+    SEX_MAP = {'F': 0, 'M': 1, 'A': 2, 'O': 2, 'N': 2}
+
+    model_dir = './algorithm/resnet'
+    model_name = 'resnset_s32c16em2_stoic2kcv25_256x224x224_2cls_agecode_ft'
+    best_weights = ['best_weight_cv05-81f2d348', 
+                    'best_weight_cv15-1e271cca', 
+                    'best_weight_cv25-d33cf6d0',
+                    'best_weight_cv35-78861d43', 
+                    'best_weight_cv45-7de59a49' 
+                    ]
+                    
+    def __init__(self, model_dir = None, model_name = None, best_weights = None, 
+                        device = 'cuda:0', deploy = False):
+        
+
         self.device = device
-        self.model_dir = model_dir
-        self.model_name = model_name
-        self.cfg = cfg
         self.extend3axis_mm = (12, 12, 6)
         self.target_spacings = None # [(1.0, 1.0, 1.0), (1.1, 1.1, 1.1)]
         self.target_shapes = [(288, 256, 256), (260, 230, 230)]
-        self.flip_directions = [None, 'diagonal', 'headfeet']
+        self.flip_directions = [None, 'diagonal']
+        self.deploy = deploy
         
-        if not model_name.endswith('nan'):
-            self.cls_model = self._create_cls_model(model_dir, model_name, best_weight)  # create model
-            self.num_classes = len(self.cls_model.CLASSES)
+        if model_dir is not None: self.model_dir = model_dir
+        if model_name is not None: self.model_name = model_name
+        if best_weights is not None: self.best_weights = best_weights
         
-        self.lung_segmentor = LungMask.get_model('unet','R231')
+        assert isinstance(self.best_weights, (tuple, list))
 
-    def _create_cls_model(self, model_dir, model_name, best_weight):
+        self.cls_models = []
+        for best_weight in self.best_weights:
+            cls_model = self._create_cls_model(self.model_dir, self.model_name, best_weight)  # create model
+            self.cls_models.append(cls_model)
+            self.num_classes = len(cls_model.CLASSES)
+
+
+    def _create_cls_model(self, model_dir, model_name, best_weight, verb = False):
         """ filenames of model weigth and config are the same """
-        config_file = f'{model_dir}/{model_name}/{model_name}.py'
-        weight_file = f'{model_dir}/{model_name}/{best_weight}.pth'
-        print(config_file)
-        print(weight_file)
+        if self.deploy: 
+            config_file = f'{model_dir}/{model_name}.py'
+            weight_file = f'{model_dir}/{best_weight}.pth'
+        else: 
+            config_file = f'{model_dir}/{model_name}/{model_name}.py'
+            weight_file = f'{model_dir}/{model_name}/{best_weight}.pth'
+        
+        if verb: print(config_file); print(weight_file)
         model = init_detector(str(config_file), str(weight_file), device=self.device)
         wrap_fp16_model(model)
         return model
 
-    def __call__(self, img_sitk, age = None):
+    def __call__(self, img_sitk, age_str = None, lung_mask_zyx = None):
         
+        case_info = {}
+        for k in img_sitk.GetMetaDataKeys():
+            case_info[k] = img_sitk.GetMetaData(k)
+        age_str, sex = case_info.get('PatientAge', 55), case_info.get('PatientSex', 'N')
+        if isinstance(age_str, str) and len(age_str) > 2:
+            age_str = age_str[:-1]
+        age_num = self.AGE_MAP[int(age_str)]
+
         affine_matrix = affine_matrix_sitk(img_sitk)
         # print('\taffine \n', affine_matrix)
         img_3d_origin = sitk.GetArrayFromImage(img_sitk) #.transpose(2, 1, 0)
         # with Timer(print_tmpl='\tInferLung {:.3f} seconds'): 
 
-        with torch.cuda.amp.autocast(enabled= True):
-            lung_3d_origin = LungMask.apply(img_sitk, batch_size=32, 
-                                            model = self.lung_segmentor,) #.transpose(2, 1, 0) # xyz
-
         img_ori_size = img_3d_origin.shape
-        extend3axis_pixel = [int(m/abs(affine_matrix[i, i])) for 
+        lung_coords = np.where(lung_mask_zyx > 0)
+        if len(lung_coords[0]) > 0:
+            extend3axis_pixel = [int(m/abs(affine_matrix[i, i])) for 
                                 i, m in enumerate(self.extend3axis_mm)]
-        lung_coords = np.where(lung_3d_origin > 0)
-        lung_slicer = tuple([slice(max(min(lung_coords[i]) - ext, 0), 
-                                   min(max(lung_coords[i]) + ext, img_ori_size[i])) 
-                                 for i, ext in enumerate(extend3axis_pixel)])
-        img_3d_lung = img_3d_origin[lung_slicer]
-        mask_3d_lung = lung_3d_origin[lung_slicer]
+            lung_slicer = tuple([slice(max(min(lung_coords[i]) - ext, 0), 
+                                    min(max(lung_coords[i]) + ext, img_ori_size[i])) 
+                                    for i, ext in enumerate(extend3axis_pixel)])
+            img_3d_lung = img_3d_origin[lung_slicer]
+        else:
+            img_3d_lung = img_3d_origin
 
-        lung_lengths = [max(lung_coords[a]) - min(lung_coords[a]) for a in range(3)]
+        # lung_lengths = [max(lung_coords[a]) - min(lung_coords[a]) for a in range(3)]
         # print(f'\t lung length {lung_lengths} Lung shape extend z{extend3axis_pixel}', img_3d_lung.shape)
-        covid_severe_prob = self.inference(img_3d_lung, affine_matrix, 
-                                            lung_mask = mask_3d_lung, age = age)
+        covid_severe_prob = self.inference(img_3d_lung, affine_matrix, age = age_num)
         return covid_severe_prob
 
-    def inference(self, image_3d, affine_matrix, lung_mask = None, age = None):
+    def inference(self, image_3d, affine_matrix, age = None):
 
         raw_arr_xyz = image_3d.transpose(2, 1, 0)
         oldshape = raw_arr_xyz.shape
         oldspacing = [abs(affine_matrix[i, i]) for i in range(3)]
-        # model_rt = Path(self.cls_model_path).parent
-        # IO4Nii.write(raw_arr_xyz, model_rt, 'test_shape_order',
-        #              self.imageset.affine_matrix, axis_order=None)
-       
-        # seg_prob_whole = np.zeros_like(raw_arr_xyz, dtype=np.float32)
-        # seg_count_whole = np.zeros_like(raw_arr_xyz, dtype=np.uint8)
+
         shape2spacing = lambda oldshape, oldspacing, newshape: [
             oldshape[i] * oldspacing[i] / news for i, news in enumerate(newshape)]
         
@@ -263,13 +290,18 @@ class CovidSeverePredictor:
         else:
             target_spacings = self.target_spacings
 
-        prob_1x2 = tta_classify_1by1(self.cls_model, raw_arr_xyz, affine = affine_matrix, 
+        ensemble_results = []
+        for cls_model in self.cls_models:
+            prob_1x2 = tta_classify_1by1(cls_model, raw_arr_xyz, affine = affine_matrix, 
                                         target_spacings = target_spacings, 
                                         flip_directions = self.flip_directions, 
                                         age = age)
-        # seg_prob_chns = seg_prob_chns.float().numpy()
-        # seg_results.append(seg_prob_chns)
-        return prob_1x2
+            ensemble_results.append(prob_1x2)
+        pred_5x2 = np.stack(ensemble_results, axis = 0)
+        if self.deploy:
+            return pred_5x2
+        else:
+            return pred_5x2.mean(axis = 0)
 
 def stoic_class_from_fname(abs_path):
     fname = str(abs_path).split('/')[-1].split('.')[0]
