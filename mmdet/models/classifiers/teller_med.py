@@ -6,6 +6,7 @@ from .image import ImageClassifier
 from mmdet.datasets.pipelines.compose import Compose
 from mmdet.utils.resize import list_dict2dict_list
 from ..utils import print_tensor
+# from torch.profiler import profile, record_function, ProfilerActivity
 import ipdb
 
 

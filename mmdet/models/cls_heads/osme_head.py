@@ -48,7 +48,7 @@ class OSMEClsHead(ClsHead):
         self.dropout_ratio = dropout_ratio
         self.logit_dist_ratio = logit_dist_ratio
 
-        self.mamc_loss_weight = osme_cfg.pop('loss_weight', 0.5)
+        self.mamc_loss_weight = osme_cfg.pop('loss_weight', 0)
         self.osme_cfg = osme_cfg
         self.age_encoding_cfg = age_encoding
         # self.output_gap_feat1d = output_gap_feat1d
@@ -89,7 +89,8 @@ class OSMEClsHead(ClsHead):
         else: 
             self.age_encoding = None
         self.osme_layer = OSMELayer(self.in_channels, **self.osme_cfg) 
-        self.mamc_loss = MAMCloss(self.osme_cfg.get('num_branch', 2))
+        if self.mamc_loss_weight:
+            self.mamc_loss = MAMCloss(self.osme_cfg.get('num_branch', 2))
 
 
     def forward_train(self, x, gt_label, age_step, train_cfg = None):
@@ -110,8 +111,8 @@ class OSMEClsHead(ClsHead):
         if self.age_encoding:
             # print('Adding age embedding')
             age_embed = self.age_encoding(age_step)
-            feat_merge = torch.stack([gap_fc_init, age_embed], dim = -1) 
-            gap_fc_init = self.merge_layer(feat_merge).squeeze()
+            feat_merge = torch.stack([gap_fc_init, age_embed], dim = -1) # BC2
+            gap_fc_init = self.merge_layer(feat_merge).squeeze(dim = -1) # BC
 
         gap_fcs_bxpxc = self.osme_layer(feat_map_ip, gap_fc_init)
         
@@ -129,11 +130,11 @@ class OSMEClsHead(ClsHead):
         losses = self.loss(cls_score, gt_label)
 
         # mamc loss
-        mamc_loss = self.mamc_loss(gap_fcs_bxpxc, gt_label.sum(dim = 1)) * self.mamc_loss_weight
-        # print('[MAMC] loss', mamc_loss)
-        losses['loss'] = losses['loss'] + mamc_loss
-        losses['mamc_loss'] = mamc_loss
-
+        if self.mamc_loss_weight:
+            mamc_loss = self.mamc_loss(gap_fcs_bxpxc, gt_label.sum(dim = 1)) * self.mamc_loss_weight
+            # print(f'[MAMC] loss weight {self.mamc_loss_weight}', mamc_loss)
+            losses['loss'] = losses['loss'] + mamc_loss
+            losses['mamc_loss'] = mamc_loss
 
         # add logit distance loss
         neg_mask = gt_label[:, 0] == 0
@@ -155,16 +156,21 @@ class OSMEClsHead(ClsHead):
             args: 
                 x: feat_maps, multi-level
         """
-        ip = x[self.in_index] if isinstance(x, (tuple, list)) else x
+        feat_map_ip = x[self.in_index] if isinstance(x, (tuple, list)) else x
+        if self.dropout is not None: feat_map_ip = self.dropout(feat_map_ip) 
 
-        # print_tensor(f'[ClsHead] test input feat {self.in_index}', ip)
-        gap_out = self.gap(ip)
+        # print_tensor(f'[ClsHead] test input feat {self.in_index}', feat_map_ip)
+        gap_fc_init = self.gap(feat_map_ip) # b1c > b2c? 
 
-        if age_step is not None and self.age_encoding is not None:
+        if self.age_encoding and age_step is not None:
+            # print('Adding age embedding')
             age_embed = self.age_encoding(age_step)
-            feat_merge = torch.stack([gap_out, age_embed], dim = -1) 
-            gap_out = self.merge_layer(feat_merge).squeeze()
-            # gap_out = gap_out + age_embed
+            feat_merge = torch.stack([gap_fc_init, age_embed], dim = -1) 
+            gap_fc_init = self.merge_layer(feat_merge).squeeze(dim = -1)
+
+        gap_fcs_bxpxc = self.osme_layer(feat_map_ip, gap_fc_init)
+        
+        gap_out = gap_fcs_bxpxc.sum(dim = 1)
 
         cls_score = self.fc(gap_out)
 
@@ -212,9 +218,9 @@ class OSMELayer(BaseModule):
         for i, att_gen in enumerate(self.attention_creator):
             attention = att_gen(feat_fc)
             feat_map_new = feat_map * attention[:, :, None, None, None]
+            # ipdb.set_trace()
             feat_fc_new = self.attention_applier[i](feat_map_new.flatten(1))
             # print_tensor('[OSME] att apply', feat_fc_new)
-            # ipdb.set_trace()
             new_fcs.append(feat_fc_new)
         new_fcs_bxpxc = torch.stack(new_fcs, dim = 1) # B, P, C
         return new_fcs_bxpxc
@@ -288,6 +294,7 @@ class MAMCloss(nn.Module):
             loss_by_samples.append(triloss)
 
         loss_mean = torch.stack(loss_by_samples, dim = 0).mean() / 3
+        # print('[MAMCloss] actual', loss_mean)
         return loss_mean
 
     def n_pair_loss(self, feat2feat_prod, pos_mask, neg_mask, anchor_ix = 0):

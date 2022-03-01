@@ -7,6 +7,7 @@ import numpy as np
 def tta_classify_1by1(model, img, affine = None, rescale = True,
                     guide_mask = None, 
                     target_spacings = [None], 
+                    target_patch_size = (256, 224, 224), 
                     flip_directions = [None, 'diagonal'],
                     age = None, verb = False):
     """Inference image(s) with the segmentor.
@@ -39,6 +40,9 @@ def tta_classify_1by1(model, img, affine = None, rescale = True,
                                     divisor=443.8,
                                     percentile_99_5=505,
                                     percentile_00_5=-1024), PIPELINES)
+
+    cropper = SpatialCrop5DGPU(keys = ('img',), roi_size = target_patch_size)
+
     # pdb.set_trace()
     # 1. normalize image
     # collect_keymap = {'img' : 'img', 'seg': 'seg', 'img_metas': 'img_meta_dict'}
@@ -48,13 +52,15 @@ def tta_classify_1by1(model, img, affine = None, rescale = True,
         for flip_direction in flip_directions: #, 'diagonal'
             # if new_spacing is None and flip_direction is not None:
             #     continue
-            if verb: print(f'\n[DetTTA] new spacing {new_spacing}  flip {flip_direction}')
+            if verb: print(f'\n[ClsTTA] new spacing {new_spacing}  flip {flip_direction}')
             resizer = ResizeTensor5DGPU(keys = ('img', ), new_spacing = new_spacing, verbose = False)
             flipper = FlipTensor5DGPU(keys = ('img', ), flip_direction = flip_direction)
             # 1. respacing
             data_var = resizer(**data_dict)
             # 2. FlipTTA
             data_var = flipper(**data_var)
+            # 3. ensure patch size
+            data_var = cropper(**data_var)
             # outer most : tta ;  2nd outer sample/minibatch; inner meta for 1 image
             data_var.pop('seg_meta_dict', None)
             data_var['img_metas'] = [{'img_meta_dict': data_var.pop('img_meta_dict', None)}]
@@ -66,8 +72,8 @@ def tta_classify_1by1(model, img, affine = None, rescale = True,
                 cls_results = model(return_loss=False, 
                                     rescale=rescale, 
                                     **data_var)
-            
-            cls_results_tta.append(cls_results)
+                if verb: print(' \t[ClsTTA] results', cls_results, cls_results.shape)
+            cls_results_tta.append(cls_results.squeeze(0))
     torch.cuda.empty_cache()    
     cls_final = np.stack(cls_results_tta, axis = 0).mean(axis = 0)
     return cls_final

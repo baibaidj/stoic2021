@@ -275,6 +275,7 @@ class ResNet3dIso(BaseModule):
                  in_channels=3,
                  stem_channels=64,
                  base_channels=64,
+                 kernel_size = 3, 
                  num_stages=4,
                  strides=(1, 2, 2, 2),
                  dilations=(1, 1, 1, 1),
@@ -345,7 +346,7 @@ class ResNet3dIso(BaseModule):
 
 
         self._make_stem_layer(in_channels, stem_channels, stem_stride_1, stem_stride_2, 
-                                stem_channel_div = stem_channel_div)
+                                stem_channel_div = stem_channel_div, kernel_size=kernel_size)
 
         self.res_layers = []    
         global_block_ix = 0
@@ -365,6 +366,7 @@ class ResNet3dIso(BaseModule):
             keyargs = dict(block=self.block,
                 inplanes=self.inplanes,
                 planes=planes,
+                kernel_size = kernel_size, 
                 num_blocks=num_blocks,
                 stride=stride,
                 dilation=dilation,
@@ -461,7 +463,7 @@ class ResNet3dIso(BaseModule):
         return getattr(self, self.norm1_name)
 
     def _make_stem_layer(self, in_channels, stem_channels, stem_stride_1 = 1, stem_stride_2 = 1, 
-                        stem_channel_div = 1):
+                        stem_channel_div = 1, kernel_size = 3):
         """Make stem layer for ResNet."""
         if self.deep_stem:
             self.stem = nn.Sequential(
@@ -469,9 +471,9 @@ class ResNet3dIso(BaseModule):
                     self.conv_cfg,
                     in_channels,
                     stem_channels // stem_channel_div, # 
-                    kernel_size=(3, 3, 3),
+                    kernel_size=[kernel_size]*3,
                     stride=[stem_stride_1] * 3,
-                    padding=(1, 1, 1),
+                    padding=[(kernel_size -1)//2]*3,
                     bias=False),
                 build_norm_layer(self.norm_cfg, stem_channels)[1], #// 2
                 nn.ReLU(inplace=True),
@@ -479,9 +481,9 @@ class ResNet3dIso(BaseModule):
                     self.conv_cfg,
                     stem_channels // stem_channel_div,#
                     stem_channels ,#// 2
-                    kernel_size=(3, 3, 3),
+                    kernel_size=[kernel_size]*3,
                     stride= [stem_stride_2] * 3,
-                    padding=(1, 1, 1),
+                    padding=[(kernel_size -1)//2]*3,
                     bias=False),
                 build_norm_layer(self.norm_cfg, stem_channels)[1],#// 2
                 nn.ReLU(inplace=True),

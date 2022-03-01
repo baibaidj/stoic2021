@@ -20,6 +20,7 @@ import pdb, torch
 
 
 print_tensor = lambda n, x: print(n, type(x), x.dtype, x.shape, x.min(), x.max())
+pad_fun = lambda k, d :  (k + (k -1) * (d - 1) - 1)//2
 
 class BasicBlock3d(nn.Module):
     """BasicBlock 3d block for ResNet3D.
@@ -54,6 +55,7 @@ class BasicBlock3d(nn.Module):
                  planes,
                  spatial_stride=1,
                  temporal_stride=1,
+                 kernel_size = 3,
                  dilation=1,
                  downsample=None,
                  style='pytorch',
@@ -92,10 +94,10 @@ class BasicBlock3d(nn.Module):
         self.conv2_stride_t = 1
 
         if self.inflate:
-            conv1_kernel_size = (3, 3, 3)
-            conv1_padding = dilation #(1, dilation, dilation)
-            conv2_kernel_size = (3, 3, 3)
-            conv2_padding = (1, 1, 1)
+            conv1_kernel_size = [kernel_size] * 3
+            conv1_padding = [pad_fun(kernel_size, dilation)] * 3 #(1, dilation, dilation)
+            conv2_kernel_size = [kernel_size] * 3
+            conv2_padding = [pad_fun(kernel_size, 1)] * 3
         else:
             conv1_kernel_size = (1, 3, 3)
             conv1_padding = (0, dilation, dilation)

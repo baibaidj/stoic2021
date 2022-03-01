@@ -3,33 +3,32 @@ _base_ = [
 ]
 # model settings
 conv_cfg = dict(type = 'Conv3d')
-#norm_cfg = dict(type='IN3d', requires_grad=True)  # IN3D
-# norm_cfg = dict(type='GN', num_groups=16, requires_grad=True) 
-# norm_cfg = dict(type='SyncBN', requires_grad=True) 
-norm_cfg = dict(type='BN3d', requires_grad=True) 
-
+norm_cfg = dict(type='IN3d', requires_grad=True) 
+stem_channels = 24
 model = dict(
     type='ImageClassifierMed',
     backbone=dict(
-        type='VAN3D',
-        in_channels=1, 
-        mlp_ratio = 3, 
-        lka_cfg = dict(dw_kernel_size = 5, 
-                        dwd_kernel_size = 5, 
-                        dwd_dilation = 3), 
+        type='ResNet3dIso', # verbose = False, 
+        deep_stem = True,
+        avg_down=True,
+        depth='343d', # 18.3G 
+        in_channels=1,
+        stem_stride_1 = 2,
+        stem_stride_2 = 1, 
+        kernel_size = 3, 
+        stem_channels= stem_channels, # 16 
+        base_channels= stem_channels * 2, # 32 
         num_stages=4,
-        depths=[2, 2, 4, 2], 
-        dims=[32, 64, 128, 256],  # 4, 4, 8, 16
-        drop_path_rate=0.2, 
-        layer_scale_init_value=0.1, 
-        out_indices=(0, 1, 2, 3),
+        strides=(2, 2, 2, 2), # 32, 64, 128, 256
+        dilations=(1, 1, 1, 1),
+        out_indices=(1, 2, 3, 4, 5), # 2, 4, 8, 16, 32
         conv_cfg=conv_cfg,
-        norm_cfg=norm_cfg, 
-        ), 
+        norm_cfg=norm_cfg,
+        style='pytorch',
+        ),
     head=dict(type='LinearClsHead',
-            in_channels = 256,
+            in_channels = stem_channels * 16,
             num_classes = 2,
-            add_feat_dist = False, 
             age_encoding= dict(),
             # is_multi_task = False, 
             loss=dict(type='CrossEntropyLoss', 

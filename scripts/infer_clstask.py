@@ -295,9 +295,10 @@ class CovidSeverePredictor:
             prob_1x2 = tta_classify_1by1(cls_model, raw_arr_xyz, affine = affine_matrix, 
                                         target_spacings = target_spacings, 
                                         flip_directions = self.flip_directions, 
-                                        age = age)
+                                        age = age, verb=False)
             ensemble_results.append(prob_1x2)
         pred_5x2 = np.stack(ensemble_results, axis = 0)
+        # ipdb.set_trace()
         if self.deploy:
             return pred_5x2
         else:
