@@ -63,7 +63,7 @@ lr_config = dict(_delete_=True,
                  )
 
 runner = dict(type='EpochBasedRunner', max_epochs=100)
-checkpoint_config = dict(interval=2, max_keep_ckpts = 10)
+checkpoint_config = dict(interval=2, max_keep_ckpts = 4)
 # yapf:disable
 log_config = dict(interval=2, hooks=[
                 dict(type='TextLoggerHook'), 

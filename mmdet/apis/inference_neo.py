@@ -9,7 +9,7 @@ def tta_classify_1by1(model, img, affine = None, rescale = True,
                     target_spacings = [None], 
                     target_patch_size = (256, 224, 224), 
                     flip_directions = [None, 'diagonal'],
-                    age = None, verb = False):
+                    age = None, sex = None, verb = False):
     """Inference image(s) with the segmentor.
 
     Args:
@@ -33,7 +33,7 @@ def tta_classify_1by1(model, img, affine = None, rescale = True,
     device = next(model.parameters()).device  # model device
     # 0. ToTensor ToGPU add channel
     data_dict = LoadImageGPU()(dict(img=img, affine = affine, 
-                                seg = guide_mask, age = age), device = device)
+                                seg = guide_mask, age = age, sex = sex), device = device)
     normalizer = build_from_cfg(dict(type='NormalizeIntensityGPUd',
                                     keys='img',
                                     subtrahend=-86.8,
@@ -158,7 +158,8 @@ class LoadImageGPU:
                                         affine = results.pop('affine', None),
                                         spatial_shape = results['img'].shape ,
                                         filename_or_obj = results.get('filename', ''), 
-                                        age = results.get('age', None)
+                                        age = results.get('age', None), 
+                                        sex = results.get('sex', None), 
                                         # new_pixdim = None, 
                                         # flip = False, 
                                         # flip_direction = 'diagnal'

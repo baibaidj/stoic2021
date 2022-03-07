@@ -7,11 +7,11 @@ _base_ = [
 img_dir = 'data/STOIC2021Round1'
 data = dict(samples_per_gpu = 16, workers_per_gpu= 16, 
             train=dict(sample_rate = 1.0, fn2imglist = 'stoic2021_case_info_split.csv', 
-                        img_dir=img_dir, prefix_dir = 'processed', cv_fold = 2), 
+                        img_dir=img_dir, prefix_dir = 'processed', cv_fold = 4), 
             val=dict(sample_rate = 1.0, fn2imglist = 'stoic2021_case_info_split.csv', 
-                        img_dir=img_dir, prefix_dir = 'processed', cv_fold = 2), 
+                        img_dir=img_dir, prefix_dir = 'processed', cv_fold = 4), 
             test= dict(sample_rate = 1.0, fn2imglist = 'stoic2021_case_info_split.csv',
-                        img_dir=img_dir, prefix_dir = 'processed', cv_fold = 2))
+                        img_dir=img_dir, prefix_dir = 'processed', cv_fold = 4))
 
 # pretrain_cp = 'work_dirs/simmim_convnext_s32c32em4_lung_224x224x192_100eps/latest.pth'
 
@@ -39,7 +39,7 @@ model = dict(
     )
 
 find_unused_parameters=True
-load_from = 'work_dirs/resnset_s32c16em2_stoic2kcv25_256x224x224_2cls_agecode_ft/best_severe_auc_epoch_18.pth'
+load_from = 'work_dirs/resnset_s32c16em2_stoic2kcv45_256x224x224_2cls_agecode/best_auc_epoch_50.pth'
 resume_from = None # 'work_dirs/resnset_s32c16em2_stoic2kcv25_256x224x224_2cls/latest.pth' 
 
 # optimizer
@@ -72,6 +72,6 @@ evaluation=dict(interval=2, start=0, metric='severe_auc',
                 save_best = 'severe_auc', rule = 'greater'
                 )
 
-# CUDA_VISIBLE_DEVICES=1 python tools/train.py configs/stoic2021/resnset_s32c16em2_stoic2kcv25_256x224x224_2cls_agecode_osme.py 
-# CUDA_VISIBLE_DEVICES=0,2,4 PORT=28024 bash ./tools/dist_train.sh configs/stoic2021/resnset_s32c16em2_stoic2kcv25_256x224x224_2cls_agecode_osme.py 3
+# CUDA_VISIBLE_DEVICES=1 python tools/train.py configs/stoic2021/resnset_s32c16em2_stoic2kcv45_256x224x224_2cls_agecode_osme.py 
+# CUDA_VISIBLE_DEVICES=0,2,4 PORT=29024 bash ./tools/dist_train.sh configs/stoic2021/resnset_s32c16em2_stoic2kcv45_256x224x224_2cls_agecode_osme.py 3
 

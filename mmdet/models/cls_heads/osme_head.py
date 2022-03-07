@@ -93,7 +93,7 @@ class OSMEClsHead(ClsHead):
             self.mamc_loss = MAMCloss(self.osme_cfg.get('num_branch', 2))
 
 
-    def forward_train(self, x, gt_label, age_step, train_cfg = None):
+    def forward_train(self, x, gt_label, age_step, gender_step = None, train_cfg = None):
 
         if self.num_classes == 1 and not self.use_sigmoid_cls:
             gt_label = gt_label[:, 0]
@@ -151,7 +151,7 @@ class OSMEClsHead(ClsHead):
 
         return losses, gap_out
     
-    def simple_test(self, x, age_step = None):
+    def simple_test(self, x, age_step = None, gender_step = None):
         """Test without augmentation.
             args: 
                 x: feat_maps, multi-level
