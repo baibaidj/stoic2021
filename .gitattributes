@@ -1,1 +1,4 @@
+algorithm/seg_weight/unet_r231-d5d2fc3d.pth filter=lfs diff=lfs merge=lfs -text
+algorithm/model_covid.pth filter=lfs diff=lfs merge=lfs -text
+algorithm/i3d/model_rgb.pth filter=lfs diff=lfs merge=lfs -text
 *.pth filter=lfs diff=lfs merge=lfs -text
