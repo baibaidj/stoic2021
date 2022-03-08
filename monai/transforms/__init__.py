@@ -8,7 +8,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+from .transform import MapTransform, Randomizable, Transform, apply_transform
 from .compose import Compose
 from .croppad.array import (
     BorderPad,
@@ -205,7 +205,7 @@ from .spatial.dictionary import (
     ZoomD,
     ZoomDict,
 )
-from .transform import MapTransform, Randomizable, Transform, apply_transform
+
 from .utility.array import (
     AddChannel,
     AddExtremePointsChannel,

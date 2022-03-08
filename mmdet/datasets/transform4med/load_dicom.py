@@ -1,11 +1,11 @@
 
 import collections
-from aiohttp import worker
 import pydicom
 import SimpleITK as sitk
 import numpy as np
-import os, ipdb
+import os, ipdb, copy
 import os.path as osp
+import pandas as pd
 from pathlib import Path
 
 def store_sqeuence_1by1(d, s3, name = 'spacing_dim'):
@@ -17,13 +17,15 @@ def get_sqeuence_1by1(d, num = 3, name = 'spacing_dim'):
     return tuple([d[f'{name}{i}'] for i in range(num)])
 
 
-def load_dicom(path, method=0):
+def load_dicom(path, method=0, verb = False):
+    path = str(path)
     volumes = []
     if method == 0:
         reader = sitk.ImageSeriesReader()
         series_IDs = sitk.ImageSeriesReader.GetGDCMSeriesIDs(path)
         for series_uid in series_IDs:
             dicom_names = reader.GetGDCMSeriesFileNames(path, series_uid)
+            if verb: print(f'\t load dicom series {series_uid}')
             reader.SetFileNames(dicom_names)
             volume = reader.Execute()
             volumes.append(volume)
@@ -60,43 +62,52 @@ def load_image_and_info(img_s_dir, series_info = {}, worker = 99, verbose = True
     series_info['direction'] = None
     store_sqeuence_1by1(series_info, [None] *3, name = 'spacing_dim')
     store_sqeuence_1by1(series_info, [None] *3, name = 'size_dim')
-    img_data = None
-    img_data_series, series_names = load_dicom(img_s_dir)
-        # series_label_infos.append(series_info)
-    if img_data_series is not None or (len(img_data_series) > 0):
-        img_data = img_data_series[0]
+    img_datas, series_infos = [], []
+    img_data_series, series_names = load_dicom(img_s_dir, verb=verbose)
+    # series_label_infos.append(series_info)
+    num_series = 0 if img_data_series is None else len(img_data_series)
+
+    for i in range(num_series):
+        img_data = img_data_series[i]
         img_spacing_xyz = img_data.GetSpacing()
         img_shape_xyz = img_data.GetSize() #[::-1]
+        series_info_i = copy.deepcopy(series_info)
         # TODO: add other important acquisition parameters, including manufacturer, reconstruction kernel, kpv, mA
-        store_sqeuence_1by1(series_info, img_spacing_xyz, name = 'spacing_dim')
-        store_sqeuence_1by1(series_info, img_shape_xyz, name = 'size_dim')
-        series_info['origin'] = img_data.GetOrigin()
-        series_info['direction'] = img_data.GetDirection()
-        # series_info['series_name'] = series_names[0]
+        store_sqeuence_1by1(series_info_i, img_spacing_xyz, name = 'spacing_dim')
+        store_sqeuence_1by1(series_info_i, img_shape_xyz, name = 'size_dim')
+        series_info_i['origin'] = img_data.GetOrigin()
+        series_info_i['direction'] = img_data.GetDirection()
+        series_info_i['series_name'] = series_names[i]
 
-    img_spacing_xyz = get_sqeuence_1by1(series_info, name = 'spacing_dim')
-    img_shape_xyz = get_sqeuence_1by1(series_info, name = 'size_dim')
-    if verbose: print(f'\t\t[Worker{worker}]CT image', img_shape_xyz, img_spacing_xyz)
+        img_spacing_xyz = get_sqeuence_1by1(series_info_i, name = 'spacing_dim')
+        img_shape_xyz = get_sqeuence_1by1(series_info_i, name = 'size_dim')
+        if verbose: print(f'\t\t[Worker{worker}]CT image {series_names[i]}', img_shape_xyz, img_spacing_xyz)
+        img_datas.append(img_data)
+        series_infos.append(series_info_i)
         # series_label_infos.append(series_info)
-    return img_data, series_info
+    return img_datas, series_infos
 
 def series2num(phase, p2d_map = {'V': 0, 'A': 1, 'PV': 2, 'PS': 3},):
     d = p2d_map.get(phase, 9)
     return d
 bind_pid_series2fn = lambda cid, sname : f'case_{cid}_000{series2num(sname)}.nii.gz'
 
+bind_pid_series = lambda cid, sname : f'case_{cid}_{sname}.nii.gz'
+
 def _dicom2nii1case(img_s_dir, dst_img_dir,  worker = 99, verb = False):
     # read DICOM data
     case_id = '_'.join(img_s_dir.split(os.sep)[-2:])
     series_info = {'cid': case_id}
-    img_data, series_info = load_image_and_info(img_s_dir, series_info, worker, verb)
+    img_datas, series_infos = load_image_and_info(img_s_dir, series_info, worker, verb)
     # store image 
-    img_fn = bind_pid_series2fn(case_id, 'V')
-    save_img_fp = osp.join(dst_img_dir , img_fn)
-    print(f'\t [dicom2nii] {case_id} to {img_fn}')
-    if not osp.exists(save_img_fp):
-        sitk.WriteImage(img_data, save_img_fp)
-    
+    for img_data, series_info_i in zip(img_datas, series_infos):
+        series_name = series_info_i['series_name']
+        img_fn = bind_pid_series(case_id, series_name)
+        save_img_fp = osp.join(dst_img_dir , img_fn)
+        print(f'\t [dicom2nii] {case_id} to {img_fn}')
+        if not osp.exists(save_img_fp):
+            sitk.WriteImage(img_data, save_img_fp)
+
     return series_info
 
 
@@ -134,8 +145,8 @@ def affine_matrix_sitk(sitk_image, row_first = True):
 
 if __name__ == '__main__':
 
-    set_name = 'train'
-    pn_rt = Path(f'/root/stoic/open_pneumonia') 
+    set_name = 'leg'
+    pn_rt = Path(f'/Users/monolith/Desktop/leg_seg') 
     # {set_name}_dicom
     raw_set_dir = pn_rt/f'{set_name}_dicom'
     store_set_dir = pn_rt/f'{set_name}_nii'
@@ -151,5 +162,7 @@ if __name__ == '__main__':
     case_info_list, *_ = Dicom2NiiLoop(case_dcm_dirs, store_set_dir, 
                                     )
     
+    case_tb = pd.DataFrame(case_info_list)
+    case_tb.to_csv(store_set_dir/f'case_info_tb_{set_name}.csv')
 
     
