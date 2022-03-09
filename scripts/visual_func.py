@@ -123,7 +123,7 @@ def plot2Image(img_2d, mask_2d, cmap='viridis',
         if fig_title is not None:
             plt.xlabel(str(fig_title))
         plt.show()
-
+    return fig
 
 
 def plotNImage(img_2d_list, cmap='viridis', rows = 1,
