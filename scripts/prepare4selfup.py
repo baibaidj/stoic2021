@@ -1,7 +1,6 @@
-
 import os, sys
 user_home = os.environ['HOME']
-conflict_rts = [f'{user_home}/git/mmseg4med', f'{user_home}/git/MONAI', f'{user_home}/git/mmdet4med']
+conflict_rts = [f'{user_home}/git/mmseg4med', f'{user_home}/git/MONAI']
 for rt in conflict_rts:
     if rt in sys.path: sys.path.remove(rt)
 
@@ -19,15 +18,26 @@ from mmdet.datasets.transform4med.load_dicom import Dicom2NiiLoop, affine_matrix
 from skimage.morphology import binary_opening, disk
 import cc3d, ipdb
 
-from demo.visual_gt_pred import  plotNImage, save_fig
+from scripts.visual_func import  plotNImage, save_fig
+from lungmask import mask as LungMask
+from mmcv import Timer
 
+from contextlib import contextmanager
+@contextmanager
+def suppress_stdout():
+    with open(os.devnull, "w") as devnull:
+        old_stdout = sys.stdout
+        sys.stdout = devnull
+        try:
+            yield
+        finally:
+            sys.stdout = old_stdout
 
 def largest_region_index(mask_multi):
     non_zero_arr = mask_multi[mask_multi > 0].flatten()
     if non_zero_arr.size == 0: return 0
     mask_max_index = np.argmax(np.bincount(non_zero_arr))
     return int(mask_max_index)
-
 
 def find_body_extend(img_3d, verb = False):
 
@@ -67,15 +77,14 @@ def find_body_extend(img_3d, verb = False):
 
     return img_3d_fg, slicer3d, fig
 
-def respacing_volume(img_3d, target_shape):
-    dtype = img_3d.dtype
+def respacing_volume(img_3d, target_shape, mode = 'trilinear'):
     img_3d = torch.from_numpy(img_3d).float()
     # ipdb.set_trace()
     img_5d_new = F.interpolate(img_3d[None, None], 
                                 size = target_shape, 
-                                mode = 'trilinear', 
-                                align_corners= False)
-    img_3d_new = img_5d_new[0, 0].numpy().astype(dtype)
+                                mode = mode, 
+                                align_corners= False if mode=='trilinear' else None )
+    img_3d_new = img_5d_new[0, 0].int().numpy()
     return img_3d_new
 
 
@@ -139,7 +148,6 @@ def process1volume(pid, origin_path, save_dir,
     from load to process to save
     """
 
-
     img_3d_origin, affine_matrix = IO4Nii.read(origin_path, verbose = False, dtype = np.int16)
 
     img_ori_size = img_3d_origin.shape
@@ -169,8 +177,7 @@ def process1volume(pid, origin_path, save_dir,
     
     # print_tensor('[final crop]', img_3d_body)
     store_file = f'{pid}_{save_suffix}'
-    if not osp.exists(osp.join(save_dir, store_file, '.nii.gz')):
-        new_img_path = IO4Nii.write(img_3d_body.astype(np.int16), save_dir, store_file, affine_new)
+    new_img_path = IO4Nii.write(img_3d_body.astype(np.int16), save_dir, store_file, affine_new)
 
     save_fig(proj_fig, osp.join(save_dir, f'{store_file}.png'))
 
@@ -198,21 +205,26 @@ def process_loop(img_paths, store_dir,
 
 triple2str = lambda x: '_'.join([str(a) for a in x]) if isinstance(x, (tuple, list)) else ''
 
-def stoic_converse_loop(case_info_tb, stoic_rt, save_dir,
-                        target_spacing = (1.6, 1.6, 1.6), 
-                        target_shape_raw = (240, 240, None), 
+def stoic_converse_loop(case_info_tb, stoic_rt : Path, save_dir,
+                        target_spacing = None, 
+                        target_shape_raw = (288, 256, 256), 
+                        extend3axis_mm = (12, 24, 4), # [32, 48, 16],  #
                         prcs_ix = 99):
     case_info_list = []
+    assert target_spacing is None or target_shape_raw is None, \
+            f'Only one can be none but got target spacing {target_spacing} target shape {target_shape_raw}'
+
+
     for i in case_info_tb.index:
         case_info = dict(case_info_tb.loc[i])
         pid = case_info['PatientID']
         covid = case_info['probCOVID']
         severity = case_info['probSevere']
-        mhd_fp = stoic_rt/img_dir/f'{pid}.mha'
+        mhd_fp = stoic_rt/f'{pid}.mha'
         # if str(pid) not in ['3616']: continue
         print(f'[Job{prcs_ix}] load {pid}', mhd_fp)
         img_sitk = sitk.ReadImage(str(mhd_fp))
-
+        
         for k in img_sitk.GetMetaDataKeys():
             case_info[k] = img_sitk.GetMetaData(k)
 
@@ -222,27 +234,51 @@ def stoic_converse_loop(case_info_tb, stoic_rt, save_dir,
 
         affine_matrix = affine_matrix_sitk(img_sitk)
         img_3d_origin = sitk.GetArrayFromImage(img_sitk).transpose(2, 1, 0)
-
         img_ori_size = img_3d_origin.shape
+        # print('\tOrigin shape', img_3d_origin.shape)
+        extend3axis_pixel = [int(m/abs(affine_matrix[i, i])) for i, m in enumerate(extend3axis_mm)]
+
+        # with Timer(print_tmpl='\tInferLung {:.3f} seconds'): 
+        #     lung_3d_origin = LungMask.apply(img_sitk, batch_size=32).transpose(2, 1, 0) # xyz
+        # ipdb.set_trace()
+        lung_fp = stoic_rt.parents[1]/'lung_mask'/f'{pid}_lung.nii.gz'
+        lung_3d_origin, lung_af = IO4Nii.read(lung_fp, verbose=False, dtype=np.uint8)
+        # print_tensor(f'\tlung_fp {lung_fp}', lung_3d_origin)
+        lung_coords = np.where(lung_3d_origin > 0)
+        lung_lengths = [max(lung_coords[a]) - min(lung_coords[a]) for a in range(3)]
+        lung_slicer = tuple([slice(max(min(lung_coords[i]) - ext, 0), 
+                                   min(max(lung_coords[i]) + ext, img_ori_size[i])) 
+                                 for i, ext in enumerate(extend3axis_pixel)])
+
+        img_3d_lung = img_3d_origin[lung_slicer]
+        mask_3d_lung = lung_3d_origin[lung_slicer]
+        img_lung_size = img_3d_lung.shape
+
+        print(f'\tLung shape extend z{extend3axis_pixel}', img_lung_size)
         # print_tensor(f'Pid {pid} img', img_3d_origin)
+            
         old_spacing = [abs(affine_matrix[i, i]) for i in range(3)]
-        new_shape_raw = [int(img_ori_size[i] * old_spacing[i] / target_spacing[i]) for i in range(3)]
+
+        if target_spacing is not None:
+            target_shape = [int(img_lung_size[i] * old_spacing[i] / target_spacing[i]) for i in range(3)]
+        else:
+            target_shape = [a for a in target_shape_raw]
+            for i, ts in enumerate(target_shape_raw): 
+                if ts is None: target_shape[i] = img_lung_size[i]
+            target_spacing = [old_spacing[i] * img_lung_size[i] / target_shape[i] for i in range(3)]
 
         # 1. resize to target spacing
-        img_ori_resize = respacing_volume(img_3d_origin, new_shape_raw)
+        img_ori_resize = respacing_volume(img_3d_lung, target_shape)
+        lung_ori_resize = respacing_volume(mask_3d_lung, target_shape, mode = 'nearest')
         img_shrink_size = img_ori_resize.shape
+        print(f'\t orisize {img_lung_size} respacing {img_shrink_size}')
 
-        target_shape = [a for a in target_shape_raw]
-        for i, ts in enumerate(target_shape_raw): 
-            if ts is None: target_shape[i] = new_shape_raw[i]
-
-        print(f'\t orisize {img_ori_size} respacing {img_shrink_size} target {target_shape}')
         # 2. find body center and perform center crop to target size
-        img_3d_fg, body_slicer, proj_fig = find_body_extend(img_ori_resize, verb = True)
+        # img_3d_fg, body_slicer, proj_fig = find_body_extend(img_ori_resize, verb = True)
 
-        body_center = [(body_slicer[i].start + body_slicer[i].stop)//2  for i in range(3)]
-        center_cropper = SpatialCropDJ(body_center, target_shape)
-        img_3d_body, slices4img, slices4patch = center_cropper(img_3d_fg)
+        # body_center = [(body_slicer[i].start + body_slicer[i].stop)//2  for i in range(3)]
+        # center_cropper = SpatialCropDJ(body_center, target_shape)
+        # img_3d_body, slices4img, slices4patch = center_cropper(img_3d_fg)
 
         # 3. write body image to disk
         affine_new = affine_matrix.copy()
@@ -250,25 +286,30 @@ def stoic_converse_loop(case_info_tb, stoic_rt, save_dir,
         
 
         case_info.update({'old_shape': triple2str(img_ori_size), 'old_spacing': triple2str(old_spacing), 
-                        'resize_shape': triple2str(img_shrink_size), 'new_shape': triple2str(img_3d_body.shape), 
-                        'new_spacing': triple2str(target_spacing), 'body_center': triple2str(body_center)})
-        case_info_list.append(case_info)
+                        'resize_shape': triple2str(img_shrink_size), 'lung_shape': triple2str(img_lung_size), 
+                        'new_spacing': triple2str(target_spacing), 'lung_length': triple2str(lung_lengths)}) # 'body_center': triple2str(body_center)
+        case_info_list.append(case_info) 
 
         # print_tensor('[final crop]', img_3d_body)
         store_fp = osp.join(save_dir, store_file, '.nii.gz')
         # if osp.exists(store_fp): continue
-        new_img_path = IO4Nii.write(img_3d_body.astype(np.int16), save_dir, store_file, affine_new)
-        save_fig(proj_fig, osp.join(save_dir, f'{store_file}.png'))
+        new_img_path = IO4Nii.write(img_ori_resize.astype(np.int16), save_dir, store_file, affine_new)
+        new_lung_path = IO4Nii.write(lung_ori_resize.astype(np.uint8), save_dir, store_file + '_lung', affine_new)
+        # save_fig(proj_fig, osp.join(save_dir, f'{store_file}.png'))
 
     return case_info_list
 
 
+
 if __name__ == '__main__':
     # abnormal cases: 9459, 2638, 1943, 3616, 7022
-    target_spacing = (1.6, 1.6, 1.6)
-    target_shape_raw = (240, 240, None)
-    stoic_rt = Path(f'/root/STOIC2021')
-    save_dir = Path('/root/stoic2021/processed')
+    # lung length xyz median  369.000000   265.000000   314.000000
+    target_spacing = (1.4, 1.4, 1.4)
+    target_shape_raw = None # (288, 256, 256)
+    extend3axis_mm = [32, 48, 16]  # (12, 24, 4)
+    stoic_rt = Path(f'/mnt/3efe7c24-877b-427a-b1a5-4a26ebca9208/STOIC2021')
+    save_dir = Path('/mnt/data2/whos/stoic2021/processed_resize')
+    save_dir.mkdir(parents=True, exist_ok=True)
     img_dir, meta_file = 'data/mha', 'metadata/reference.csv'
     meta_keys = ('PatientID', 'probCOVID', 'probSevere', 'ITK_InputFilterName', 'ITK_original_direction', 
                 'ITK_original_spacing', 'PatientAge', 'PatientName', 'PatientSex', 'SliceThickness')
@@ -276,11 +317,11 @@ if __name__ == '__main__':
     case_info_tb = pd.read_csv(stoic_rt/meta_file)
     case_info_list, *_ = run_parralel(stoic_converse_loop, 
                                         case_info_tb, 
-                                        stoic_rt, save_dir, 
+                                        stoic_rt/img_dir, save_dir, 
                                         target_spacing, target_shape_raw, 
-                                        num_workers=1)
+                                        extend3axis_mm, 
+                                        num_workers=6)
 
     case_info_alltb = pd.DataFrame(case_info_list)
-    case_info_alltb.to_csv(save_dir/f'stoic2021_case_info.csv', index = False)
+    case_info_alltb.to_csv(save_dir/f'stoic2021_case_info_justresize.csv', index = False)
         
-
